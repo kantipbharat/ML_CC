@@ -12,7 +12,7 @@ import zlib
 HOST = '127.0.0.1'
 PORT = 8080
 ADDR = (HOST, PORT)
-TIMEOUT = 2
+TIMEOUT = 3
 
 DATA = 0
 ACK = 1
