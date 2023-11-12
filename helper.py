@@ -1,3 +1,4 @@
+from collections import deque
 import errno
 import math
 import numpy as np

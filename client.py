@@ -39,14 +39,19 @@ prev_send = np.NaN; curr_send = np.NaN; inter_send = np.NaN; min_inter_send = sy
 prev_arr = np.NaN; curr_arr = np.NaN; inter_arr = np.NaN; min_inter_arr = sys.maxsize
 ratio_inter_send = np.NaN; ratio_inter_arr = np.NaN; ratio_rtt = np.NaN
 
-ts_inter_send = [np.NaN] * TS_SIZE; ts_inter_arr = [np.NaN] * TS_SIZE; ts_rtt = [np.NaN] * TS_SIZE
-ts_ratio_inter_send = [np.NaN] * TS_SIZE; ts_ratio_inter_arr = [np.NaN] * TS_SIZE; ts_ratio_rtt = [np.NaN] * TS_SIZE
+ts_inter_send = [np.NaN] * (TS_SIZE + 1); ts_inter_arr = [np.NaN] * (TS_SIZE + 1); ts_rtt = [np.NaN] * (TS_SIZE + 1)
+ts_ratio_inter_send = [np.NaN] * (TS_SIZE + 1); ts_ratio_inter_arr = [np.NaN] * (TS_SIZE + 1); ts_ratio_rtt = [np.NaN] * (TS_SIZE + 1)
 ewma_inter_send = np.NaN; ewma_inter_arr = np.NaN; ewma_rtt = np.NaN
 
-alpha = 0.2
+timestamps = deque()
+window_size = 1
+throughput = 0.0
+reward = 0.0
 
-# throughput
-# reward
+alpha = 0.2
+beta = 0.2
+gamma = 0.2
+delta = 0.2
 
 columns = ['num', 'idx', 'cwnd', 'cwnd_order', 'ssthresh', 'send_time']
 columns += ['latency', 'rtt', 'loss_rate']
@@ -59,22 +64,23 @@ columns += ['ratio_inter_arr'] + ['ts_ratio_inter_arr_' + str(i + 1) for i in ra
 columns += ['rtt', 'min_rtt', 'ewma_rtt']
 columns += ['ts_rtt_' + str(i + 1) for i in range(TS_SIZE)]
 columns += ['ratio_rtt'] + ['ts_ratio_rtt_' + str(i + 1) for i in range(TS_SIZE)]
-df = pd.DataFrame(columns=columns + ['recvd'])
+columns += ['throughput', 'reward', 'recvd']
+print(len(columns))
+print()
+df = pd.DataFrame(columns=columns)
 
 def send_packs():
     global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
     global cwnd, ssthresh, cwnd_order, last_ack
-
     global latency, rtt, min_rtt
     global prev_send, curr_send, inter_send, min_inter_send
     global prev_arr, curr_arr, inter_arr, min_inter_arr
     global ratio_inter_send, ratio_inter_arr, ratio_rtt
-
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
-
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
+    global timestamps, window_size, throughput, reward
 
     try:
         while running:
@@ -92,22 +98,26 @@ def send_packs():
                 if sent_packets != 0: loss_rate = float(lost_packets) / float(sent_packets)
                 if min_inter_send != 0: ratio_inter_send = inter_send / min_inter_send
 
-                ts_inter_send = ts_inter_send[1:TS_SIZE] + [inter_send]
-                ts_ratio_inter_send = ts_ratio_inter_send[1:TS_SIZE] + [ratio_inter_send]
+                ts_inter_send = ts_inter_send[1:TS_SIZE + 1] + [inter_send]
+                ts_ratio_inter_send = ts_ratio_inter_send[1:TS_SIZE + 1] + [ratio_inter_send]
 
                 if not np.isnan(ewma_inter_send): ewma_inter_send = (inter_send * alpha) + (ewma_inter_send * (1 - alpha))
                 if np.isnan(ewma_inter_send) and not np.isnan(inter_send): ewma_inter_send = inter_send
 
+                throughput = len(timestamps) / window_size
+                reward = (beta * throughput) - (gamma * latency) - (delta * loss_rate)
+
                 row = [curr_packet, idx, cwnd, cwnd_order, ssthresh, send_time]
                 row += [latency, rtt, loss_rate]
                 row += [inter_send, min_inter_send, ewma_inter_send]
-                row += [ts_inter_send[i] - ts_inter_send[0] for i in range(TS_SIZE)] 
-                row += [ratio_inter_send] + [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(TS_SIZE)]
+                row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
+                row += [ratio_inter_send] + [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]
                 row += [inter_arr, min_inter_arr, ewma_inter_arr] 
-                row += [ts_inter_arr[i] - ts_inter_arr[0] for i in range(TS_SIZE)]
-                row += [ratio_inter_arr] + [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(TS_SIZE)]
-                row += [rtt, min_rtt, ewma_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(TS_SIZE)]
-                row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(TS_SIZE)]
+                row += [ts_inter_arr[i] - ts_inter_arr[0] for i in range(1, TS_SIZE + 1)]
+                row += [ratio_inter_arr] + [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(1, TS_SIZE + 1)]
+                row += [rtt, min_rtt, ewma_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)]
+                row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
+                row += [throughput, reward]
                 df.loc[len(df)] = row + [-1]
 
                 cwnd_order += 1
@@ -122,16 +132,14 @@ def recv_acks():
     global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
     global cwnd, ssthresh, cwnd_order, last_ack
-
     global latency, rtt, min_rtt
     global prev_send, curr_send, inter_send, min_inter_send
     global prev_arr, curr_arr, inter_arr, min_inter_arr
     global ratio_inter_send, ratio_inter_arr, ratio_rtt
-
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
-
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
+    global timestamps, window_size, throughput, reward
 
     try:
         while running or pending_acks:
@@ -144,6 +152,8 @@ def recv_acks():
             if recv_packet.typ != ACK: raise Exception("The received packet is not a regular ACK packet. Terminating...")
             with send_lock:
                 df.loc[(df['num'] == recv_packet.num) & (df['idx'] == recv_packet.idx), 'recvd'] = 1
+                timestamps.append(ack_recv_time); current_time = time.time() - start_time
+                while timestamps and current_time - timestamps[0] > window_size: timestamps.popleft()
                 if recv_packet.num in pending_acks:
                     del pending_acks[recv_packet.num]; last_ack += 1
 
@@ -153,19 +163,16 @@ def recv_acks():
                     latency = recv_packet.recv_time - recv_packet.send_time
                     rtt = ack_recv_time - recv_packet.send_time
                     if rtt < min_rtt: min_rtt = rtt
-
                     if min_inter_arr != 0: ratio_inter_arr = inter_arr / min_inter_arr
                     if min_rtt != 0: ratio_rtt = float(rtt) / float(min_rtt)
 
-                    ts_inter_arr = ts_inter_arr[1:TS_SIZE] + [inter_arr]
-                    ts_rtt = ts_rtt[1:TS_SIZE] + [rtt]
-
-                    ts_ratio_inter_arr = ts_ratio_inter_arr[1:TS_SIZE] + [ratio_inter_arr]
-                    ts_ratio_rtt = ts_ratio_rtt[1:TS_SIZE] + [ratio_rtt]
+                    ts_inter_arr = ts_inter_arr[1:TS_SIZE + 1] + [inter_arr]
+                    ts_rtt = ts_rtt[1:TS_SIZE + 1] + [rtt]
+                    ts_ratio_inter_arr = ts_ratio_inter_arr[1:TS_SIZE + 1] + [ratio_inter_arr]
+                    ts_ratio_rtt = ts_ratio_rtt[1:TS_SIZE + 1] + [ratio_rtt]
 
                     if not np.isnan(ewma_inter_arr): ewma_inter_arr = (inter_arr * alpha) + (ewma_inter_arr * (1 - alpha))
                     if np.isnan(ewma_inter_arr) and not np.isnan(inter_arr): ewma_inter_arr = inter_arr
-
                     if not np.isnan(ewma_rtt): ewma_rtt = (rtt * alpha) + (rtt * (1 - alpha))
                     if np.isnan(ewma_rtt) and not np.isnan(rtt): ewma_rtt = rtt
 
@@ -181,16 +188,14 @@ def retransmit():
     global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
     global cwnd, ssthresh, cwnd_order, last_ack
-
     global latency, rtt, min_rtt
     global prev_send, curr_send, inter_send, min_inter_send
     global prev_arr, curr_arr, inter_arr, min_inter_arr
     global ratio_inter_send, ratio_inter_arr, ratio_rtt
-
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
-
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
+    global timestamps, window_size, throughput, reward
 
     try:
         while running or pending_acks:
@@ -212,22 +217,26 @@ def retransmit():
                         if sent_packets != 0: loss_rate = float(lost_packets) / float(sent_packets)
                         if min_inter_send != 0: ratio_inter_send = inter_send / min_inter_send
 
-                        ts_inter_send = ts_inter_send[1:TS_SIZE] + [inter_send]
-                        ts_ratio_inter_send = ts_ratio_inter_send[1:TS_SIZE] + [ratio_inter_send]
+                        ts_inter_send = ts_inter_send[1:TS_SIZE + 1] + [inter_send]
+                        ts_ratio_inter_send = ts_ratio_inter_send[1:TS_SIZE + 1] + [ratio_inter_send]
 
                         if not np.isnan(ewma_inter_send): ewma_inter_send = (inter_send * alpha) + (ewma_inter_send * (1 - alpha))
                         if np.isnan(ewma_inter_send) and not np.isnan(inter_send): ewma_inter_send = inter_send
 
+                        throughput = len(timestamps) / window_size
+                        reward = (beta * throughput) - (gamma * latency) - (delta * loss_rate)
+
                         row = [num, idx, cwnd, pending_acks[num]['cwnd_order'], ssthresh, send_time]
                         row += [latency, rtt, loss_rate]
                         row += [inter_send, min_inter_send, ewma_inter_send]
-                        row += [ts_inter_send[i] - ts_inter_send[0] for i in range(TS_SIZE)] 
-                        row += [ratio_inter_send] + [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(TS_SIZE)]
+                        row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
+                        row += [ratio_inter_send] + [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]
                         row += [inter_arr, min_inter_arr, ewma_inter_arr]
-                        row += [ts_inter_arr[i] - ts_inter_arr[0] for i in range(TS_SIZE)]
-                        row += [ratio_inter_arr] + [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(TS_SIZE)]
-                        row += [rtt, min_rtt, ewma_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(TS_SIZE)]
-                        row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(TS_SIZE)]
+                        row += [ts_inter_arr[i] - ts_inter_arr[0] for i in range(1, TS_SIZE + 1)]
+                        row += [ratio_inter_arr] + [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(1, TS_SIZE + 1)]
+                        row += [rtt, min_rtt, ewma_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)]
+                        row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
+                        row += [throughput, reward]
                         df.loc[len(df)] = row + [-1]
 
                         sent_packets += 1; lost_packets += 1
@@ -279,7 +288,11 @@ finally:
     except Exception as err: print("The following error occured before terminating the connection: " + str(err)); traceback.print_exc()
     finally:
         if cli_socket: cli_socket.close()
+
+        df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
+        df = df.dropna()
         df.to_csv('out.csv')
+
         if sent_packets > 0:
             loss_rate = round((lost_packets / sent_packets) * 100, 8)
             print("Packet loss rate was: " + str(loss_rate) + "%")
