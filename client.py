@@ -65,8 +65,6 @@ columns += ['rtt', 'min_rtt', 'ewma_rtt']
 columns += ['ts_rtt_' + str(i + 1) for i in range(TS_SIZE)]
 columns += ['ratio_rtt'] + ['ts_ratio_rtt_' + str(i + 1) for i in range(TS_SIZE)]
 columns += ['throughput', 'reward', 'recvd']
-print(len(columns))
-print()
 df = pd.DataFrame(columns=columns)
 
 def send_packs():
@@ -123,7 +121,7 @@ def send_packs():
                 cwnd_order += 1
                 if cwnd_order > cwnd: cwnd_order = 1
                 sent_packets += 1; last_packet = curr_packet; curr_packet += 1
-            if sent_packets % 100000 == 0: print("Sent " + str(sent_packets) + " packets.")
+            if sent_packets % 10000 == 0: print("Sent " + str(sent_packets) + " packets.")
     except Exception as err:
         print("The following error occured while sending packets: " + str(err))
         traceback.print_exc(); return
@@ -205,7 +203,7 @@ def retransmit():
                     ssthresh = max(cwnd / 2, 2); cwnd = 1
                 for num in pending_acks.keys():
                     if num <= last_packet:
-                        print('Lost packet ' + str(num) + '. Attempting to retransmit.')
+                        # print('Lost packet ' + str(num) + '. Attempting to retransmit.')
                         idx = random.randint(1000, 9999)
                         send_time = time.time() - start_time
                         cli_socket.send(Packet(num, idx, DATA, send_time=send_time).to_bytes())
@@ -253,7 +251,10 @@ recv_thread.start()
 retransmit_thread.start()
 
 try:
-    while running: time.sleep(0.1)
+    while running: 
+        time.sleep(0.1)
+        if time.time() - start_time > 10:
+            running = False
 except KeyboardInterrupt:
     print("Client received a keyboard interrupt. Terminating..."); running = False
 except Exception as err:

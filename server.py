@@ -34,11 +34,11 @@ except Exception as err:
     traceback.print_exc()
     cli_socket.close(); serv_socket.close(); exit(1)
 
-recv_packets = 0
+recv_packets = 1
 
 try:
     while True:
-        if recv_packets % 100000 == 0:
+        if recv_packets % 10000 == 0:
             print("Received " + str(recv_packets) + " packets.")
 
         data = cli_socket.recv(PACKET_SIZE)
