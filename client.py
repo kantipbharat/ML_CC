@@ -33,7 +33,6 @@ running = True; pending_acks = {}; send_lock = threading.Lock()
 curr_packet = 1; last_packet = 0; sent_packets = 0; lost_packets = 0
 cwnd = 1.0; ssthresh = 64; cwnd_order = 1; last_ack = 0
 
-# throughput
 latency = np.NaN; rtt = np.NaN; min_rtt = sys.maxsize
 prev_send = np.NaN; curr_send = np.NaN; inter_send = np.NaN; min_inter_send = sys.maxsize
 prev_arr = np.NaN; curr_arr = np.NaN; inter_arr = np.NaN; min_inter_arr = sys.maxsize
@@ -52,6 +51,9 @@ alpha = 0.2
 beta = 0.2
 gamma = 0.2
 delta = 0.2
+lpthresh = 0.6
+
+model = pickle.load(open(PKL_NAME, 'rb'))
 
 columns = ['num', 'idx', 'cwnd', 'cwnd_order', 'ssthresh', 'send_time']
 columns += ['latency', 'rtt', 'loss_rate']
@@ -68,6 +70,8 @@ columns += ['throughput', 'reward', 'recvd']
 df = pd.DataFrame(columns=columns)
 df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
 
+row = [np.NaN] * len(columns)
+
 def send_packs():
     global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
@@ -79,14 +83,21 @@ def send_packs():
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global timestamps, window_size, throughput, reward, df
+    global timestamps, window_size, throughput, reward, df, row
 
     try:
         while running:
             if curr_packet > last_ack + math.floor(cwnd): continue
             idx = random.randint(1000, 9999)
             send_time = time.time() - start_time
+
+            if not np.any(np.isnan(row[2:])):
+                probs = model.predict_proba(np.array(row[2:]).reshape(1, -1))[0]
+                if probs[len(probs) - 1] < lpthresh: cwnd = max(cwnd - 1, 1)
+                if cwnd_order > cwnd: cwnd_order = 1
+
             cli_socket.send(Packet(curr_packet, idx, DATA, send_time=send_time).to_bytes())
+
             with send_lock:
                 pending_acks[curr_packet] = {'cwnd_order':cwnd_order}
 
@@ -117,16 +128,17 @@ def send_packs():
                 row += [rtt, min_rtt, ewma_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)]
                 row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
                 row += [throughput, reward]
-                df.loc[len(df)] = row + [-1]
+                df.loc[len(df)] = row + [0]
 
                 if len(df) > 5000:
                     df = df.dropna()
                     df.to_csv(CSV_NAME, mode='a', header=not os.path.exists(CSV_NAME))
                     df = df.iloc[0:0]
-
+                
                 cwnd_order += 1
                 if cwnd_order > cwnd: cwnd_order = 1
                 sent_packets += 1; last_packet = curr_packet; curr_packet += 1
+
             if sent_packets % 10000 == 0: print("Sent " + str(sent_packets) + " packets.")
     except Exception as err:
         print("The following error occured while sending packets: " + str(err))
@@ -143,7 +155,7 @@ def recv_acks():
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global timestamps, window_size, throughput, reward, df
+    global timestamps, window_size, throughput, reward, df, row
 
     try:
         while running or pending_acks:
@@ -199,7 +211,7 @@ def retransmit():
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global timestamps, window_size, throughput, reward, df
+    global timestamps, window_size, throughput, reward, df, row
 
     try:
         while running or pending_acks:
@@ -209,10 +221,9 @@ def retransmit():
                     ssthresh = max(cwnd / 2, 2); cwnd = 1
                 for num in pending_acks.keys():
                     if num <= last_packet:
-                        # print('Lost packet ' + str(num) + '. Attempting to retransmit.')
+                        print('Lost packet ' + str(num) + '. Attempting to retransmit.')
                         idx = random.randint(1000, 9999)
                         send_time = time.time() - start_time
-                        cli_socket.send(Packet(num, idx, DATA, send_time=send_time).to_bytes())
 
                         prev_send = curr_send; curr_send = send_time; inter_send = curr_send - prev_send
                         if inter_send < min_inter_send: min_inter_send = inter_send
@@ -241,13 +252,14 @@ def retransmit():
                         row += [rtt, min_rtt, ewma_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)]
                         row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
                         row += [throughput, reward]
-                        df.loc[len(df)] = row + [-1]
+                        df.loc[len(df)] = row + [0]
 
                         if len(df) > 5000:
                             df = df.dropna()
                             df.to_csv(CSV_NAME, mode='a', header=not os.path.exists(CSV_NAME))
                             df = df.iloc[0:0]
 
+                        cli_socket.send(Packet(num, idx, DATA, send_time=send_time).to_bytes())
                         sent_packets += 1; lost_packets += 1
     except Exception as err:
         print("The following error occured while retransmitting packets: " + str(err))
@@ -264,7 +276,7 @@ retransmit_thread.start()
 try:
     while running: 
         time.sleep(0.1)
-        if time.time() - start_time > 10000:
+        if time.time() - start_time > 20:
             running = False
 except KeyboardInterrupt:
     print("Client received a keyboard interrupt. Terminating..."); running = False

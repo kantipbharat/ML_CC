@@ -4,6 +4,7 @@ import math
 import numpy as np
 import os
 import pandas as pd
+import pickle
 import random
 import socket
 import struct
@@ -16,7 +17,7 @@ import zlib
 HOST = '127.0.0.1'
 PORT = 8080
 ADDR = (HOST, PORT)
-TIMEOUT = 2
+TIMEOUT = 1
 
 DATA = 0
 ACK = 1
@@ -28,6 +29,7 @@ FIN_ACK = 5
 TS_SIZE = 8
 
 CSV_NAME = 'out.csv'
+PKL_NAME = 'model.sav'
 
 class Packet:
     PACK_FORM = '!IIIdd'
