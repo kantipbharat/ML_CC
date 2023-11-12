@@ -2,6 +2,7 @@ from collections import deque
 import errno
 import math
 import numpy as np
+import os
 import pandas as pd
 import random
 import socket
@@ -25,6 +26,8 @@ FIN = 4
 FIN_ACK = 5
 
 TS_SIZE = 8
+
+CSV_NAME = 'out.csv'
 
 class Packet:
     PACK_FORM = '!IIIdd'

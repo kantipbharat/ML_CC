@@ -66,6 +66,7 @@ columns += ['ts_rtt_' + str(i + 1) for i in range(TS_SIZE)]
 columns += ['ratio_rtt'] + ['ts_ratio_rtt_' + str(i + 1) for i in range(TS_SIZE)]
 columns += ['throughput', 'reward', 'recvd']
 df = pd.DataFrame(columns=columns)
+df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
 
 def send_packs():
     global running, pending_acks, send_lock
@@ -78,7 +79,7 @@ def send_packs():
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global timestamps, window_size, throughput, reward
+    global timestamps, window_size, throughput, reward, df
 
     try:
         while running:
@@ -118,6 +119,11 @@ def send_packs():
                 row += [throughput, reward]
                 df.loc[len(df)] = row + [-1]
 
+                if len(df) > 5000:
+                    df = df.dropna()
+                    df.to_csv(CSV_NAME, mode='a', header=not os.path.exists(CSV_NAME))
+                    df = df.iloc[0:0]
+
                 cwnd_order += 1
                 if cwnd_order > cwnd: cwnd_order = 1
                 sent_packets += 1; last_packet = curr_packet; curr_packet += 1
@@ -137,7 +143,7 @@ def recv_acks():
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global timestamps, window_size, throughput, reward
+    global timestamps, window_size, throughput, reward, df
 
     try:
         while running or pending_acks:
@@ -193,7 +199,7 @@ def retransmit():
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global timestamps, window_size, throughput, reward
+    global timestamps, window_size, throughput, reward, df
 
     try:
         while running or pending_acks:
@@ -237,6 +243,11 @@ def retransmit():
                         row += [throughput, reward]
                         df.loc[len(df)] = row + [-1]
 
+                        if len(df) > 5000:
+                            df = df.dropna()
+                            df.to_csv(CSV_NAME, mode='a', header=not os.path.exists(CSV_NAME))
+                            df = df.iloc[0:0]
+
                         sent_packets += 1; lost_packets += 1
     except Exception as err:
         print("The following error occured while retransmitting packets: " + str(err))
@@ -253,7 +264,7 @@ retransmit_thread.start()
 try:
     while running: 
         time.sleep(0.1)
-        if time.time() - start_time > 10:
+        if time.time() - start_time > 10000:
             running = False
 except KeyboardInterrupt:
     print("Client received a keyboard interrupt. Terminating..."); running = False
@@ -290,9 +301,8 @@ finally:
     finally:
         if cli_socket: cli_socket.close()
 
-        df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
         df = df.dropna()
-        df.to_csv('out.csv')
+        df.to_csv(CSV_NAME, mode='a', header=not os.path.exists(CSV_NAME))
 
         if sent_packets > 0:
             loss_rate = round((lost_packets / sent_packets) * 100, 8)
