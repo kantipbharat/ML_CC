@@ -42,7 +42,8 @@ ts_inter_send = [np.NaN] * (TS_SIZE + 1); ts_inter_arr = [np.NaN] * (TS_SIZE + 1
 ts_ratio_inter_send = [np.NaN] * (TS_SIZE + 1); ts_ratio_inter_arr = [np.NaN] * (TS_SIZE + 1); ts_ratio_rtt = [np.NaN] * (TS_SIZE + 1)
 ewma_inter_send = np.NaN; ewma_inter_arr = np.NaN; ewma_rtt = np.NaN
 
-timestamps = deque()
+throughput_timestamps = deque()
+loss_rate_timestamps = deque()
 window_size = 1
 throughput = 0.0
 reward = 0.0
@@ -56,7 +57,7 @@ lpthresh = 0.6
 model = pickle.load(open(PKL_NAME, 'rb'))
 
 columns = ['num', 'idx', 'cwnd', 'cwnd_order', 'ssthresh', 'send_time']
-columns += ['latency', 'rtt', 'loss_rate']
+columns += ['latency', 'rtt', 'loss_rate', 'overall_loss_rate']
 columns += ['inter_send', 'min_inter_send', 'ewma_inter_send']
 columns += ['ts_inter_send_' + str(i + 1) for i in range(TS_SIZE)]
 columns += ['ratio_inter_send'] + ['ts_ratio_inter_send_' + str(i + 1) for i in range(TS_SIZE)]
@@ -83,7 +84,8 @@ def send_packs():
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global timestamps, window_size, throughput, reward, df, row
+    global throughput_timestamps, loss_rate_timestamps
+    global window_size, throughput, reward, df, row
 
     try:
         while running:
@@ -104,8 +106,8 @@ def send_packs():
                 prev_send = curr_send; curr_send = send_time; inter_send = curr_send - prev_send
                 if inter_send < min_inter_send: min_inter_send = inter_send
 
-                loss_rate = 0.0
-                if sent_packets != 0: loss_rate = float(lost_packets) / float(sent_packets)
+                overall_loss_rate = 0.0
+                if sent_packets != 0: overall_loss_rate = float(lost_packets) / float(sent_packets)
                 if min_inter_send != 0: ratio_inter_send = inter_send / min_inter_send
 
                 ts_inter_send = ts_inter_send[1:TS_SIZE + 1] + [inter_send]
@@ -114,11 +116,12 @@ def send_packs():
                 if not np.isnan(ewma_inter_send): ewma_inter_send = (inter_send * alpha) + (ewma_inter_send * (1 - alpha))
                 if np.isnan(ewma_inter_send) and not np.isnan(inter_send): ewma_inter_send = inter_send
 
-                throughput = len(timestamps) / window_size
+                throughput = len(throughput_timestamps) / window_size
+                loss_rate = len(loss_rate_timestamps) / window_size
                 reward = (beta * throughput) - (gamma * latency) - (delta * loss_rate)
 
                 row = [curr_packet, idx, cwnd, cwnd_order, ssthresh, send_time]
-                row += [latency, rtt, loss_rate]
+                row += [latency, rtt, loss_rate, overall_loss_rate]
                 row += [inter_send, min_inter_send, ewma_inter_send]
                 row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
                 row += [ratio_inter_send] + [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]
@@ -155,7 +158,8 @@ def recv_acks():
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global timestamps, window_size, throughput, reward, df, row
+    global throughput_timestamps, loss_rate_timestamps
+    global window_size, throughput, reward, df, row
 
     try:
         while running or pending_acks:
@@ -168,8 +172,8 @@ def recv_acks():
             if recv_packet.typ != ACK: raise Exception("The received packet is not a regular ACK packet. Terminating...")
             with send_lock:
                 df.loc[(df['num'] == recv_packet.num) & (df['idx'] == recv_packet.idx), 'recvd'] = 1
-                timestamps.append(ack_recv_time); current_time = time.time() - start_time
-                while timestamps and current_time - timestamps[0] > window_size: timestamps.popleft()
+                throughput_timestamps.append(ack_recv_time); current_time = time.time() - start_time
+                while throughput_timestamps and current_time - throughput_timestamps[0] > window_size: throughput_timestamps.popleft()
                 if recv_packet.num in pending_acks:
                     del pending_acks[recv_packet.num]; last_ack += 1
 
@@ -211,7 +215,8 @@ def retransmit():
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global timestamps, window_size, throughput, reward, df, row
+    global throughput_timestamps, loss_rate_timestamps
+    global window_size, throughput, reward, df, row
 
     try:
         while running or pending_acks:
@@ -221,6 +226,9 @@ def retransmit():
                     ssthresh = max(cwnd / 2, 2); cwnd = 1
                 for num in pending_acks.keys():
                     if num <= last_packet:
+                        current_time = time.time() - start_time; loss_rate_timestamps.append(current_time)
+                        while loss_rate_timestamps and current_time - loss_rate_timestamps[0] > window_size: loss_rate_timestamps.popleft()
+
                         print('Lost packet ' + str(num) + '. Attempting to retransmit.')
                         idx = random.randint(1000, 9999)
                         send_time = time.time() - start_time
@@ -228,8 +236,8 @@ def retransmit():
                         prev_send = curr_send; curr_send = send_time; inter_send = curr_send - prev_send
                         if inter_send < min_inter_send: min_inter_send = inter_send
 
-                        loss_rate = 0.0
-                        if sent_packets != 0: loss_rate = float(lost_packets) / float(sent_packets)
+                        overall_loss_rate = 0.0
+                        if sent_packets != 0: overall_loss_rate = float(lost_packets) / float(sent_packets)
                         if min_inter_send != 0: ratio_inter_send = inter_send / min_inter_send
 
                         ts_inter_send = ts_inter_send[1:TS_SIZE + 1] + [inter_send]
@@ -238,11 +246,12 @@ def retransmit():
                         if not np.isnan(ewma_inter_send): ewma_inter_send = (inter_send * alpha) + (ewma_inter_send * (1 - alpha))
                         if np.isnan(ewma_inter_send) and not np.isnan(inter_send): ewma_inter_send = inter_send
 
-                        throughput = len(timestamps) / window_size
+                        throughput = len(throughput_timestamps) / window_size
+                        loss_rate = len(loss_rate_timestamps) / window_size
                         reward = (beta * throughput) - (gamma * latency) - (delta * loss_rate)
 
                         row = [num, idx, cwnd, pending_acks[num]['cwnd_order'], ssthresh, send_time]
-                        row += [latency, rtt, loss_rate]
+                        row += [latency, rtt, loss_rate, overall_loss_rate]
                         row += [inter_send, min_inter_send, ewma_inter_send]
                         row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
                         row += [ratio_inter_send] + [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]
@@ -276,7 +285,7 @@ retransmit_thread.start()
 try:
     while running: 
         time.sleep(0.1)
-        if time.time() - start_time > 20:
+        if time.time() - start_time > 5:
             running = False
 except KeyboardInterrupt:
     print("Client received a keyboard interrupt. Terminating..."); running = False
@@ -317,5 +326,5 @@ finally:
         df.to_csv(CSV_NAME, mode='a', header=not os.path.exists(CSV_NAME))
 
         if sent_packets > 0:
-            loss_rate = round((lost_packets / sent_packets) * 100, 8)
-            print("Packet loss rate was: " + str(loss_rate) + "%")
+            overall_loss_rate = round((lost_packets / sent_packets) * 100, 8)
+            print("Packet loss rate was: " + str(overall_loss_rate) + "%")
