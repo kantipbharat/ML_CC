@@ -17,7 +17,7 @@ except Exception as err:
 running = True; pending_acks = {}; send_lock = threading.Lock()
 curr_packet = 1; last_packet = 0; sent_packets = 0; lost_packets = 0
 
-MSS = 1.0; cwnd = MSS; ssthresh = 64.0; cwnd_order = 1; last_ack = 0 # initial variables for congestion control
+cwnd = 1.0; ssthresh = 64.0; MSS = 1.0; cwnd_order = 1; last_ack = 0 # initial variables for congestion control
 ewma_smoothing_factor = 0.7 # smoothing factor for EWMA calculations
 
 prev_send, curr_send, inter_send, ratio_inter_send, ewma_inter_send = [np.NaN] * 5
@@ -41,24 +41,32 @@ columns += ['recvd']
 df = pd.DataFrame(columns=columns)
 df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
 
+model = pickle.load(open(PKL_NAME, 'rb')); lpthresh = 0.6 # min probability of success to send
 if os.path.exists(CSV_NAME): os.remove(CSV_NAME)
 
 row = [np.NaN] * len(columns)
 
 def send_packs():
-    global running, pending_acks, send_lock, df
+    global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
-    global MSS, cwnd, ssthresh, cwnd_order, last_ack, ewma_smoothing_factor
+    global cwnd, ssthresh, MSS, cwnd_order, last_ack, ewma_smoothing_factor
     global prev_send, curr_send, inter_send, ratio_inter_send, ewma_inter_send
     global prev_arr, curr_arr, inter_arr, ratio_inter_arr, ewma_inter_arr
     global rtt, ratio_rtt, min_inter_send, min_inter_arr, min_rtt
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
+    global df, row, model, lpthresh
 
     try:
         while running:
             if curr_packet > last_ack + math.floor(cwnd): continue
             idx = random.randint(1000, 9999); send_time = time.time() - start_time
+
+            if not np.any(np.isnan(row[2:])):
+                probs = model.predict_proba(np.array(row[2:]).reshape(1, -1))[0]
+                if probs[len(probs) - 1] < lpthresh: cwnd = max(cwnd - 1, 1)
+                if cwnd_order > cwnd: cwnd_order = 1
+
             cli_socket.send(Packet(curr_packet, idx, DATA, send_time=send_time).to_bytes())
 
             with send_lock:
@@ -96,14 +104,15 @@ def send_packs():
         traceback.print_exc(); return
 
 def recv_acks():
-    global running, pending_acks, send_lock, df
+    global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
-    global MSS, cwnd, ssthresh, cwnd_order, last_ack, ewma_smoothing_factor
+    global cwnd, ssthresh, MSS, cwnd_order, last_ack, ewma_smoothing_factor
     global prev_send, curr_send, inter_send, ratio_inter_send, ewma_inter_send
     global prev_arr, curr_arr, inter_arr, ratio_inter_arr, ewma_inter_arr
     global rtt, ratio_rtt, min_inter_send, min_inter_arr, min_rtt
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
+    global df, row, model, lpthresh
 
     try:
         while running or pending_acks:
@@ -136,14 +145,15 @@ def recv_acks():
         traceback.print_exc(); return
 
 def retransmit():
-    global running, pending_acks, send_lock, df
+    global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
-    global MSS, cwnd, ssthresh, cwnd_order, last_ack, ewma_smoothing_factor
+    global cwnd, ssthresh, MSS, cwnd_order, last_ack, ewma_smoothing_factor
     global prev_send, curr_send, inter_send, ratio_inter_send, ewma_inter_send
     global prev_arr, curr_arr, inter_arr, ratio_inter_arr, ewma_inter_arr
     global rtt, ratio_rtt, min_inter_send, min_inter_arr, min_rtt
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
+    global df, row, model, lpthresh
 
     try:
         while running or pending_acks:
