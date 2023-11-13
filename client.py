@@ -2,9 +2,8 @@ from helper import *
 
 cli_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM); cli_socket.connect(ADDR); start_time = 0.0
 
-def recv_packet_func(exp_typ):
-    global cli_socket
-    data = cli_socket.recv(PACKET_SIZE)
+def recv_packet_func(sock, exp_typ):
+    data = sock.recv(PACKET_SIZE)
     if not data: raise Exception("No information received. Terminating...")
     if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
     if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
@@ -14,7 +13,7 @@ def recv_packet_func(exp_typ):
 
 try:
     cli_socket.send(Packet(0, 0, SYN).to_bytes())
-    recv_packet_func(SYN_ACK); recv_packet_func(SYN)
+    recv_packet_func(cli_socket, SYN_ACK); recv_packet_func(cli_socket, SYN)
     start_time = time.time(); cli_socket.send(Packet(0, 0, SYN_ACK, recv_time=start_time).to_bytes())
     print("4-way handshake to establish connection was successful.")
 except KeyboardInterrupt:
@@ -56,7 +55,6 @@ columns += ['ratio_rtt'] + ['ts_ratio_rtt_' + str(i + 1) for i in range(TS_SIZE)
 columns += ['throughput', 'reward', 'recvd']
 
 row = [np.NaN] * len(columns)
-
 df = pd.DataFrame(columns=columns)
 df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
 model = pickle.load(open(PKL_NAME, 'rb'))
@@ -156,7 +154,7 @@ def recv_acks():
 
     try:
         while running or pending_acks:
-            recv_packet = recv_packet_func(ACK)
+            recv_packet = recv_packet_func(cli_socket, ACK)
             ack_recv_time = time.time() - start_time
             with send_lock:
                 df.loc[(df['num'] == recv_packet.num) & (df['idx'] == recv_packet.idx), 'recvd'] = 1
@@ -189,8 +187,7 @@ def recv_acks():
                     if cwnd_order > cwnd: cwnd_order = 1
     except Exception as err:
         print("The following error occured while receiving packets: " + str(err))
-        traceback.print_exc()
-        return
+        traceback.print_exc(); return
 
 def retransmit():
     global cwnd, ssthresh, window_size, lpthresh
@@ -212,13 +209,11 @@ def retransmit():
         while running or pending_acks:
             time.sleep(TIMEOUT)
             with send_lock:
-                if pending_acks: 
-                    ssthresh = max(cwnd / 2, 2); cwnd = 1
+                if pending_acks: ssthresh = max(cwnd / 2, 2); cwnd = 1
                 for num in pending_acks.keys():
                     if num <= last_packet:
                         if len(df[df['num'] == num]) >= MAX_TRANSMIT:
-                            del pending_acks[num]
-                            continue
+                            del pending_acks[num]; continue
 
                         current_time = time.time() - start_time; loss_rate_timestamps.append(current_time)
                         while loss_rate_timestamps and current_time - loss_rate_timestamps[0] > window_size: loss_rate_timestamps.popleft()
@@ -271,43 +266,30 @@ def retransmit():
 send_thread = threading.Thread(target=send_packs, daemon=True)
 recv_thread = threading.Thread(target=recv_acks, daemon=True)
 retransmit_thread = threading.Thread(target=retransmit, daemon=True)
-
-send_thread.start()
-recv_thread.start()
-retransmit_thread.start()
+send_thread.start(); recv_thread.start(); retransmit_thread.start()
 
 try:
     while running: 
         time.sleep(0.1)
         if time.time() - start_time > RUNTIME:
             running = False
-except KeyboardInterrupt:
-    print("Client received a keyboard interrupt. Terminating..."); running = False
-except Exception as err:
-    print("The following error occured: " + str(err)); running = False
+except KeyboardInterrupt: print("Client received a keyboard interrupt. Terminating..."); running = False
+except Exception as err: print("The following error occured: " + str(err)); running = False
 finally:
     print("Stopping the client...")
 
     try:
-        send_thread.join()
-        recv_thread.join()
-        retransmit_thread.join()
-
+        send_thread.join(); recv_thread.join(); retransmit_thread.join()
         cli_socket.send(Packet(0, 0, FIN).to_bytes())
-
-        recv_packet_func(FIN_ACK)
-        recv_packet_func(FIN)
-
+        recv_packet_func(cli_socket, FIN_ACK); recv_packet_func(cli_socket, FIN)
         cli_socket.send(Packet(0, 0, FIN_ACK).to_bytes())
         print("4-way handshake to terminate connection was successful.")
     except KeyboardInterrupt: print("Client received a keyboard interrupt before terminating the connection. Terminating...")
     except Exception as err: print("The following error occured before terminating the connection: " + str(err)); traceback.print_exc()
     finally:
         if cli_socket: cli_socket.close()
-
         df = df.dropna()
         df.to_csv(CSV_NAME, mode='a', header=not os.path.exists(CSV_NAME))
-
         if sent_packets > 0:
             overall_loss_rate = round((lost_packets / sent_packets) * 100, 8)
             print("Packet loss rate was: " + str(overall_loss_rate) + "%")
