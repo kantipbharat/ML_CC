@@ -27,7 +27,9 @@ FIN = 4
 FIN_ACK = 5
 
 TS_SIZE = 8
+MAX_TRANSMIT = 2
 
+RUNTIME = 10
 CSV_NAME = 'out.csv'
 PKL_NAME = 'model.sav'
 

@@ -2,25 +2,20 @@ from helper import *
 
 cli_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM); cli_socket.connect(ADDR); start_time = 0.0
 
+def recv_packet_func(exp_typ):
+    global cli_socket
+    data = cli_socket.recv(PACKET_SIZE)
+    if not data: raise Exception("No information received. Terminating...")
+    if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
+    if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
+    recv_packet = Packet.from_bytes(data)
+    if recv_packet.typ != exp_typ: raise Exception("Expected packet type " + str(exp_typ) + " but received " + str(recv_packet.typ) + ". Terminating...")
+    return recv_packet
+
 try:
     cli_socket.send(Packet(0, 0, SYN).to_bytes())
-    
-    data = cli_socket.recv(PACKET_SIZE)
-    if not data: raise Exception("No information received. Terminating...")
-    if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
-    if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
-    recv_packet = Packet.from_bytes(data)
-    if recv_packet.typ != SYN_ACK: raise Exception("Did not receive a SYN_ACK packet to establish the connection. Terminating...")
-
-    data = cli_socket.recv(PACKET_SIZE)
-    if not data: raise Exception("No information received. Terminating...")
-    if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
-    if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
-    recv_packet = Packet.from_bytes(data)
-    if recv_packet.typ != SYN: raise Exception("Did not receive a SYN packet to establish the connection. Terminating...")
-    
-    start_time = time.time()
-    cli_socket.send(Packet(0, 0, SYN_ACK, recv_time=start_time).to_bytes())
+    recv_packet_func(SYN_ACK); recv_packet_func(SYN)
+    start_time = time.time(); cli_socket.send(Packet(0, 0, SYN_ACK, recv_time=start_time).to_bytes())
     print("4-way handshake to establish connection was successful.")
 except KeyboardInterrupt:
     print("Client received a keyboard interrupt before establishing connection. Terminating...")
@@ -29,32 +24,23 @@ except Exception as err:
     print("The following error occured before establishing connection: " + str(err))
     cli_socket.close(); traceback.print_exc(); exit(1)
 
+cwnd = 1.0; ssthresh = 64; window_size = 1; lpthresh = 0.6 # hyperparameters
+alpha = 0.2; beta = 0.2; gamma = 0.2; delta = 0.2 # hyperparameter
+
 running = True; pending_acks = {}; send_lock = threading.Lock()
 curr_packet = 1; last_packet = 0; sent_packets = 0; lost_packets = 0
-cwnd = 1.0; ssthresh = 64; cwnd_order = 1; last_ack = 0
+cwnd_order = 1; last_ack = 0
 
-latency = np.NaN; rtt = np.NaN; min_rtt = sys.maxsize
-prev_send = np.NaN; curr_send = np.NaN; inter_send = np.NaN; min_inter_send = sys.maxsize
-prev_arr = np.NaN; curr_arr = np.NaN; inter_arr = np.NaN; min_inter_arr = sys.maxsize
-ratio_inter_send = np.NaN; ratio_inter_arr = np.NaN; ratio_rtt = np.NaN
+rtt = np.NaN; min_rtt = sys.maxsize; ratio_rtt = np.NaN
+prev_send = np.NaN; curr_send = np.NaN; inter_send = np.NaN; min_inter_send = sys.maxsize; ratio_inter_send = np.NaN
+prev_arr = np.NaN; curr_arr = np.NaN; inter_arr = np.NaN; min_inter_arr = sys.maxsize; ratio_inter_arr = np.NaN
 
 ts_inter_send = [np.NaN] * (TS_SIZE + 1); ts_inter_arr = [np.NaN] * (TS_SIZE + 1); ts_rtt = [np.NaN] * (TS_SIZE + 1)
 ts_ratio_inter_send = [np.NaN] * (TS_SIZE + 1); ts_ratio_inter_arr = [np.NaN] * (TS_SIZE + 1); ts_ratio_rtt = [np.NaN] * (TS_SIZE + 1)
 ewma_inter_send = np.NaN; ewma_inter_arr = np.NaN; ewma_rtt = np.NaN
 
-throughput_timestamps = deque()
-loss_rate_timestamps = deque()
-window_size = 1
-throughput = 0.0
-reward = 0.0
-
-alpha = 0.2
-beta = 0.2
-gamma = 0.2
-delta = 0.2
-lpthresh = 0.6
-
-model = pickle.load(open(PKL_NAME, 'rb'))
+throughput_timestamps = deque(); loss_rate_timestamps = deque()
+throughput = 0.0; latency = np.NaN; loss_rate = 0.0; reward = 0.0
 
 columns = ['num', 'idx', 'cwnd', 'cwnd_order', 'ssthresh', 'send_time']
 columns += ['latency', 'rtt', 'loss_rate', 'overall_loss_rate']
@@ -68,24 +54,29 @@ columns += ['rtt', 'min_rtt', 'ewma_rtt']
 columns += ['ts_rtt_' + str(i + 1) for i in range(TS_SIZE)]
 columns += ['ratio_rtt'] + ['ts_ratio_rtt_' + str(i + 1) for i in range(TS_SIZE)]
 columns += ['throughput', 'reward', 'recvd']
-df = pd.DataFrame(columns=columns)
-df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
 
 row = [np.NaN] * len(columns)
 
+df = pd.DataFrame(columns=columns)
+df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
+model = pickle.load(open(PKL_NAME, 'rb'))
+if os.path.exists(CSV_NAME): os.remove(CSV_NAME)
+
 def send_packs():
+    global cwnd, ssthresh, window_size, lpthresh
+    global alpha, beta, gamma, delta
     global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
-    global cwnd, ssthresh, cwnd_order, last_ack
-    global latency, rtt, min_rtt
-    global prev_send, curr_send, inter_send, min_inter_send
-    global prev_arr, curr_arr, inter_arr, min_inter_arr
-    global ratio_inter_send, ratio_inter_arr, ratio_rtt
+    global cwnd_order, last_ack
+    global rtt, min_rtt, ratio_rtt
+    global prev_send, curr_send, inter_send, min_inter_send, ratio_inter_send
+    global prev_arr, curr_arr, inter_arr, min_inter_arr, ratio_inter_arr
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
     global throughput_timestamps, loss_rate_timestamps
-    global window_size, throughput, reward, df, row
+    global throughput, latency, loss_rate, reward
+    global model, df, row
 
     try:
         while running:
@@ -148,28 +139,25 @@ def send_packs():
         traceback.print_exc(); return
 
 def recv_acks():
+    global cwnd, ssthresh, window_size, lpthresh
+    global alpha, beta, gamma, delta
     global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
-    global cwnd, ssthresh, cwnd_order, last_ack
-    global latency, rtt, min_rtt
-    global prev_send, curr_send, inter_send, min_inter_send
-    global prev_arr, curr_arr, inter_arr, min_inter_arr
-    global ratio_inter_send, ratio_inter_arr, ratio_rtt
+    global cwnd_order, last_ack
+    global rtt, min_rtt, ratio_rtt
+    global prev_send, curr_send, inter_send, min_inter_send, ratio_inter_send
+    global prev_arr, curr_arr, inter_arr, min_inter_arr, ratio_inter_arr
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
     global throughput_timestamps, loss_rate_timestamps
-    global window_size, throughput, reward, df, row
+    global throughput, latency, loss_rate, reward
+    global model, df, row
 
     try:
         while running or pending_acks:
-            data = cli_socket.recv(PACKET_SIZE)
+            recv_packet = recv_packet_func(ACK)
             ack_recv_time = time.time() - start_time
-            if not data: raise Exception("No information received. Terminating...")
-            if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
-            if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
-            recv_packet = Packet.from_bytes(data)
-            if recv_packet.typ != ACK: raise Exception("The received packet is not a regular ACK packet. Terminating...")
             with send_lock:
                 df.loc[(df['num'] == recv_packet.num) & (df['idx'] == recv_packet.idx), 'recvd'] = 1
                 throughput_timestamps.append(ack_recv_time); current_time = time.time() - start_time
@@ -205,18 +193,20 @@ def recv_acks():
         return
 
 def retransmit():
+    global cwnd, ssthresh, window_size, lpthresh
+    global alpha, beta, gamma, delta
     global running, pending_acks, send_lock
     global curr_packet, last_packet, sent_packets, lost_packets
-    global cwnd, ssthresh, cwnd_order, last_ack
-    global latency, rtt, min_rtt
-    global prev_send, curr_send, inter_send, min_inter_send
-    global prev_arr, curr_arr, inter_arr, min_inter_arr
-    global ratio_inter_send, ratio_inter_arr, ratio_rtt
+    global cwnd_order, last_ack
+    global rtt, min_rtt, ratio_rtt
+    global prev_send, curr_send, inter_send, min_inter_send, ratio_inter_send
+    global prev_arr, curr_arr, inter_arr, min_inter_arr, ratio_inter_arr
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt
     global throughput_timestamps, loss_rate_timestamps
-    global window_size, throughput, reward, df, row
+    global throughput, latency, loss_rate, reward
+    global model, df, row
 
     try:
         while running or pending_acks:
@@ -226,6 +216,10 @@ def retransmit():
                     ssthresh = max(cwnd / 2, 2); cwnd = 1
                 for num in pending_acks.keys():
                     if num <= last_packet:
+                        if len(df[df['num'] == num]) >= MAX_TRANSMIT:
+                            del pending_acks[num]
+                            continue
+
                         current_time = time.time() - start_time; loss_rate_timestamps.append(current_time)
                         while loss_rate_timestamps and current_time - loss_rate_timestamps[0] > window_size: loss_rate_timestamps.popleft()
 
@@ -285,7 +279,7 @@ retransmit_thread.start()
 try:
     while running: 
         time.sleep(0.1)
-        if time.time() - start_time > 5:
+        if time.time() - start_time > RUNTIME:
             running = False
 except KeyboardInterrupt:
     print("Client received a keyboard interrupt. Terminating..."); running = False
@@ -301,19 +295,8 @@ finally:
 
         cli_socket.send(Packet(0, 0, FIN).to_bytes())
 
-        data = cli_socket.recv(PACKET_SIZE)
-        if not data: raise Exception("No information received. Terminating...")
-        if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
-        if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
-        recv_packet = Packet.from_bytes(data)
-        if recv_packet.typ != FIN_ACK: raise Exception("Did not receive a FIN_ACK packet to terminate the connection. Terminating...")
-        
-        data = cli_socket.recv(PACKET_SIZE)
-        if not data: raise Exception("No information received. Terminating...")
-        if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
-        if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
-        recv_packet = Packet.from_bytes(data)
-        if recv_packet.typ != FIN: raise Exception("Did not receive a FIN packet to establish the connection. Terminating...")
+        recv_packet_func(FIN_ACK)
+        recv_packet_func(FIN)
 
         cli_socket.send(Packet(0, 0, FIN_ACK).to_bytes())
         print("4-way handshake to terminate connection was successful.")
