@@ -33,6 +33,15 @@ RUNTIME = 10
 CSV_NAME = 'out.csv'
 PKL_NAME = 'model.sav'
 
+def recv_packet_func(sock, exp_typ):
+    data = sock.recv(PACKET_SIZE)
+    if not data: raise Exception("No information received. Terminating...")
+    if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
+    if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
+    recv_packet = Packet.from_bytes(data)
+    if recv_packet.typ not in exp_typ: raise Exception("Expected packet type " + str(exp_typ) + " but received " + str(recv_packet.typ) + ". Terminating...")
+    return recv_packet
+
 class Packet:
     PACK_FORM = '!IIIdd'
     PACK_SIZE = struct.calcsize(PACK_FORM)

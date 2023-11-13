@@ -2,18 +2,9 @@ from helper import *
 
 cli_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM); cli_socket.connect(ADDR); start_time = 0.0
 
-def recv_packet_func(sock, exp_typ):
-    data = sock.recv(PACKET_SIZE)
-    if not data: raise Exception("No information received. Terminating...")
-    if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
-    if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
-    recv_packet = Packet.from_bytes(data)
-    if recv_packet.typ != exp_typ: raise Exception("Expected packet type " + str(exp_typ) + " but received " + str(recv_packet.typ) + ". Terminating...")
-    return recv_packet
-
 try:
     cli_socket.send(Packet(0, 0, SYN).to_bytes())
-    recv_packet_func(cli_socket, SYN_ACK); recv_packet_func(cli_socket, SYN)
+    recv_packet_func(cli_socket, [SYN_ACK]); recv_packet_func(cli_socket, [SYN])
     start_time = time.time(); cli_socket.send(Packet(0, 0, SYN_ACK, recv_time=start_time).to_bytes())
     print("4-way handshake to establish connection was successful.")
 except KeyboardInterrupt:
@@ -61,20 +52,13 @@ model = pickle.load(open(PKL_NAME, 'rb'))
 if os.path.exists(CSV_NAME): os.remove(CSV_NAME)
 
 def send_packs():
-    global cwnd, ssthresh, window_size, lpthresh
-    global alpha, beta, gamma, delta
-    global running, pending_acks, send_lock
-    global curr_packet, last_packet, sent_packets, lost_packets
-    global cwnd_order, last_ack
-    global rtt, min_rtt, ratio_rtt
+    global cwnd, ssthresh, window_size, lpthresh, alpha, beta, gamma, delta, running, pending_acks, send_lock
+    global curr_packet, last_packet, sent_packets, lost_packets, cwnd_order, last_ack, rtt, min_rtt, ratio_rtt
     global prev_send, curr_send, inter_send, min_inter_send, ratio_inter_send
     global prev_arr, curr_arr, inter_arr, min_inter_arr, ratio_inter_arr
-    global ts_inter_send, ts_inter_arr, ts_rtt
-    global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
-    global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global throughput_timestamps, loss_rate_timestamps
-    global throughput, latency, loss_rate, reward
-    global model, df, row
+    global ts_inter_send, ts_inter_arr, ts_rtt, ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
+    global ewma_inter_send, ewma_inter_arr, ewma_rtt, throughput_timestamps, loss_rate_timestamps
+    global throughput, latency, loss_rate, reward, model, df, row
 
     try:
         while running:
@@ -110,16 +94,13 @@ def send_packs():
                 reward = (beta * throughput) - (gamma * latency) - (delta * loss_rate)
 
                 row = [curr_packet, idx, cwnd, cwnd_order, ssthresh, send_time]
-                row += [latency, rtt, loss_rate, overall_loss_rate]
-                row += [inter_send, min_inter_send, ewma_inter_send]
+                row += [latency, rtt, loss_rate, overall_loss_rate] + [inter_send, min_inter_send, ewma_inter_send]
                 row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
                 row += [ratio_inter_send] + [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]
-                row += [inter_arr, min_inter_arr, ewma_inter_arr] 
-                row += [ts_inter_arr[i] - ts_inter_arr[0] for i in range(1, TS_SIZE + 1)]
+                row += [inter_arr, min_inter_arr, ewma_inter_arr] + [ts_inter_arr[i] - ts_inter_arr[0] for i in range(1, TS_SIZE + 1)]
                 row += [ratio_inter_arr] + [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(1, TS_SIZE + 1)]
                 row += [rtt, min_rtt, ewma_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)]
-                row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
-                row += [throughput, reward]
+                row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)] + [throughput, reward]
                 df.loc[len(df)] = row + [0]
 
                 if len(df) > 5000:
@@ -137,24 +118,17 @@ def send_packs():
         traceback.print_exc(); return
 
 def recv_acks():
-    global cwnd, ssthresh, window_size, lpthresh
-    global alpha, beta, gamma, delta
-    global running, pending_acks, send_lock
-    global curr_packet, last_packet, sent_packets, lost_packets
-    global cwnd_order, last_ack
-    global rtt, min_rtt, ratio_rtt
+    global cwnd, ssthresh, window_size, lpthresh, alpha, beta, gamma, delta, running, pending_acks, send_lock
+    global curr_packet, last_packet, sent_packets, lost_packets, cwnd_order, last_ack, rtt, min_rtt, ratio_rtt
     global prev_send, curr_send, inter_send, min_inter_send, ratio_inter_send
     global prev_arr, curr_arr, inter_arr, min_inter_arr, ratio_inter_arr
-    global ts_inter_send, ts_inter_arr, ts_rtt
-    global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
-    global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global throughput_timestamps, loss_rate_timestamps
-    global throughput, latency, loss_rate, reward
-    global model, df, row
+    global ts_inter_send, ts_inter_arr, ts_rtt, ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
+    global ewma_inter_send, ewma_inter_arr, ewma_rtt, throughput_timestamps, loss_rate_timestamps
+    global throughput, latency, loss_rate, reward, model, df, row
 
     try:
         while running or pending_acks:
-            recv_packet = recv_packet_func(cli_socket, ACK)
+            recv_packet = recv_packet_func(cli_socket, [ACK])
             ack_recv_time = time.time() - start_time
             with send_lock:
                 df.loc[(df['num'] == recv_packet.num) & (df['idx'] == recv_packet.idx), 'recvd'] = 1
@@ -190,20 +164,13 @@ def recv_acks():
         traceback.print_exc(); return
 
 def retransmit():
-    global cwnd, ssthresh, window_size, lpthresh
-    global alpha, beta, gamma, delta
-    global running, pending_acks, send_lock
-    global curr_packet, last_packet, sent_packets, lost_packets
-    global cwnd_order, last_ack
-    global rtt, min_rtt, ratio_rtt
+    global cwnd, ssthresh, window_size, lpthresh, alpha, beta, gamma, delta, running, pending_acks, send_lock
+    global curr_packet, last_packet, sent_packets, lost_packets, cwnd_order, last_ack, rtt, min_rtt, ratio_rtt
     global prev_send, curr_send, inter_send, min_inter_send, ratio_inter_send
     global prev_arr, curr_arr, inter_arr, min_inter_arr, ratio_inter_arr
-    global ts_inter_send, ts_inter_arr, ts_rtt
-    global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
-    global ewma_inter_send, ewma_inter_arr, ewma_rtt
-    global throughput_timestamps, loss_rate_timestamps
-    global throughput, latency, loss_rate, reward
-    global model, df, row
+    global ts_inter_send, ts_inter_arr, ts_rtt, ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
+    global ewma_inter_send, ewma_inter_arr, ewma_rtt, throughput_timestamps, loss_rate_timestamps
+    global throughput, latency, loss_rate, reward, model, df, row
 
     try:
         while running or pending_acks:
@@ -240,16 +207,14 @@ def retransmit():
                         reward = (beta * throughput) - (gamma * latency) - (delta * loss_rate)
 
                         row = [num, idx, cwnd, pending_acks[num]['cwnd_order'], ssthresh, send_time]
-                        row += [latency, rtt, loss_rate, overall_loss_rate]
-                        row += [inter_send, min_inter_send, ewma_inter_send]
+                        row += [latency, rtt, loss_rate, overall_loss_rate] + [inter_send, min_inter_send, ewma_inter_send]
                         row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
                         row += [ratio_inter_send] + [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]
                         row += [inter_arr, min_inter_arr, ewma_inter_arr]
                         row += [ts_inter_arr[i] - ts_inter_arr[0] for i in range(1, TS_SIZE + 1)]
                         row += [ratio_inter_arr] + [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(1, TS_SIZE + 1)]
                         row += [rtt, min_rtt, ewma_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)]
-                        row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
-                        row += [throughput, reward]
+                        row += [ratio_rtt] + [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)] + [throughput, reward]
                         df.loc[len(df)] = row + [0]
 
                         if len(df) > 5000:
@@ -281,7 +246,7 @@ finally:
     try:
         send_thread.join(); recv_thread.join(); retransmit_thread.join()
         cli_socket.send(Packet(0, 0, FIN).to_bytes())
-        recv_packet_func(cli_socket, FIN_ACK); recv_packet_func(cli_socket, FIN)
+        recv_packet_func(cli_socket, [FIN_ACK]); recv_packet_func(cli_socket, [FIN])
         cli_socket.send(Packet(0, 0, FIN_ACK).to_bytes())
         print("4-way handshake to terminate connection was successful.")
     except KeyboardInterrupt: print("Client received a keyboard interrupt before terminating the connection. Terminating...")

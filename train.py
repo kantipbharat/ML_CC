@@ -3,10 +3,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.model_selection import GridSearchCV
-import pandas as pd
-import numpy as np
-import time
-import pickle
 from helper import *
 
 start_time = time.time()
@@ -45,4 +41,5 @@ print("Best Train Accuracy: " + str(train_accuracy * 100) + "%")
 
 print(time.time() - start_time)
 
+if os.path.exists(PKL_NAME): os.remove(PKL_NAME)
 pickle.dump(best_model, open(PKL_NAME, 'wb'))
