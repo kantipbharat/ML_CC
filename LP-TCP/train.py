@@ -17,11 +17,11 @@ y_train = y_train.values
 y_test = y_test.values
 
 param_grid = {
-    'n_estimators': [100, 200, 300],  # Number of trees in the forest
-    'max_depth': [10, 20, 30, None],  # Maximum depth of the tree
-    'min_samples_split': [2, 5, 10],  # Minimum number of samples required to split a node
-    'min_samples_leaf': [1, 2, 4],    # Minimum number of samples required at each leaf node
-    'bootstrap': [True, False]        # Method of selecting samples for training each tree
+    'n_estimators': [100, 200, 300],
+    'max_depth': [10, 20, 30, None],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
+    'bootstrap': [True, False]
 }
 
 rf_model = RandomForestClassifier(random_state=42)

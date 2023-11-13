@@ -15,7 +15,7 @@ except Exception as err:
     cli_socket.close(); traceback.print_exc(); exit(1)
 
 cwnd = 1.0; ssthresh = 64; window_size = 1; lpthresh = 0.6 # hyperparameters
-alpha = 0.2; beta = 0.2; gamma = 0.2; delta = 0.2 # hyperparameter
+ewma_smoothing_factor = 0.2; throughput_factor = 0.2; latency_factor = 0.2; loss_rate_factor = 0.2 # hyperparameter
 
 running = True; pending_acks = {}; send_lock = threading.Lock()
 curr_packet = 1; last_packet = 0; sent_packets = 0; lost_packets = 0
@@ -30,7 +30,8 @@ ts_ratio_inter_send = [np.NaN] * (TS_SIZE + 1); ts_ratio_inter_arr = [np.NaN] * 
 ewma_inter_send = np.NaN; ewma_inter_arr = np.NaN; ewma_rtt = np.NaN
 
 throughput_timestamps = deque(); loss_rate_timestamps = deque()
-throughput = 0.0; latency = np.NaN; loss_rate = 0.0; reward = 0.0
+throughput = 0.0; max_throughput = 0.0; latency = np.NaN; loss_rate = 0.0; reward = 0.0
+delay = np.NaN; delay_factor = 0.2; prev_utility = 0.0; curr_utility = 0.0; diff_utility = 0.0
 
 columns = ['num', 'idx', 'cwnd', 'cwnd_order', 'ssthresh', 'send_time']
 columns += ['latency', 'rtt', 'loss_rate', 'overall_loss_rate']
@@ -50,15 +51,17 @@ df = pd.DataFrame(columns=columns)
 df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
 model = pickle.load(open(PKL_NAME, 'rb'))
 if os.path.exists(CSV_NAME): os.remove(CSV_NAME)
+#levels = 10
 
 def send_packs():
-    global cwnd, ssthresh, window_size, lpthresh, alpha, beta, gamma, delta, running, pending_acks, send_lock
+    global cwnd, ssthresh, window_size, lpthresh, running, pending_acks, send_lock
+    global ewma_smoothing_factor, throughput_factor, latency_factor, loss_rate_factor
     global curr_packet, last_packet, sent_packets, lost_packets, cwnd_order, last_ack, rtt, min_rtt, ratio_rtt
     global prev_send, curr_send, inter_send, min_inter_send, ratio_inter_send
     global prev_arr, curr_arr, inter_arr, min_inter_arr, ratio_inter_arr
     global ts_inter_send, ts_inter_arr, ts_rtt, ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt, throughput_timestamps, loss_rate_timestamps
-    global throughput, latency, loss_rate, reward, model, df, row
+    global throughput, max_throughput, latency, loss_rate, reward, delay, delay_factor, prev_utility, curr_utility, diff_utility, model, df, row
 
     try:
         while running:
@@ -86,12 +89,24 @@ def send_packs():
                 ts_inter_send = ts_inter_send[1:TS_SIZE + 1] + [inter_send]
                 ts_ratio_inter_send = ts_ratio_inter_send[1:TS_SIZE + 1] + [ratio_inter_send]
 
-                if not np.isnan(ewma_inter_send): ewma_inter_send = (inter_send * alpha) + (ewma_inter_send * (1 - alpha))
+                if not np.isnan(ewma_inter_send): ewma_inter_send = (inter_send * ewma_smoothing_factor) + (ewma_inter_send * (1 - ewma_smoothing_factor))
                 if np.isnan(ewma_inter_send) and not np.isnan(inter_send): ewma_inter_send = inter_send
 
                 throughput = len(throughput_timestamps) / window_size
-                loss_rate = len(loss_rate_timestamps) / window_size
-                reward = (beta * throughput) - (gamma * latency) - (delta * loss_rate)
+                if throughput > max_throughput: max_throughput = throughput
+                loss_rate = len(loss_rate_timestamps) / window_size; delay = rtt - min_rtt
+
+                throughput_utility = 0; delay_utility = 0; loss_rate_utility = 0
+                if max_throughput != 0: np.log(throughput / max_throughput)
+                if delay != 0: delay_factor * np.log(delay)
+                if loss_rate != 0: loss_rate_factor * np.log(loss_rate)
+                utility = throughput_utility - delay_utility + loss_rate_utility
+                prev_utility = curr_utility; curr_utility = utility; diff_utility = curr_utility - prev_utility
+
+                if diff_utility >= 1: reward = 10
+                elif diff_utility < 1 and diff_utility >= 0: reward = 2
+                elif diff_utility < 0 and diff_utility >= -1: reward = -2
+                elif diff_utility < -1: reward = -10
 
                 row = [curr_packet, idx, cwnd, cwnd_order, ssthresh, send_time]
                 row += [latency, rtt, loss_rate, overall_loss_rate] + [inter_send, min_inter_send, ewma_inter_send]
@@ -118,13 +133,14 @@ def send_packs():
         traceback.print_exc(); return
 
 def recv_acks():
-    global cwnd, ssthresh, window_size, lpthresh, alpha, beta, gamma, delta, running, pending_acks, send_lock
+    global cwnd, ssthresh, window_size, lpthresh, running, pending_acks, send_lock
+    global ewma_smoothing_factor, throughput_factor, latency_factor, loss_rate_factor
     global curr_packet, last_packet, sent_packets, lost_packets, cwnd_order, last_ack, rtt, min_rtt, ratio_rtt
     global prev_send, curr_send, inter_send, min_inter_send, ratio_inter_send
     global prev_arr, curr_arr, inter_arr, min_inter_arr, ratio_inter_arr
     global ts_inter_send, ts_inter_arr, ts_rtt, ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt, throughput_timestamps, loss_rate_timestamps
-    global throughput, latency, loss_rate, reward, model, df, row
+    global throughput, max_throughput, latency, loss_rate, reward, delay, delay_factor, prev_utility, curr_utility, diff_utility, model, df, row
 
     try:
         while running or pending_acks:
@@ -151,9 +167,9 @@ def recv_acks():
                     ts_ratio_inter_arr = ts_ratio_inter_arr[1:TS_SIZE + 1] + [ratio_inter_arr]
                     ts_ratio_rtt = ts_ratio_rtt[1:TS_SIZE + 1] + [ratio_rtt]
 
-                    if not np.isnan(ewma_inter_arr): ewma_inter_arr = (inter_arr * alpha) + (ewma_inter_arr * (1 - alpha))
+                    if not np.isnan(ewma_inter_arr): ewma_inter_arr = (inter_arr * ewma_smoothing_factor) + (ewma_inter_arr * (1 - ewma_smoothing_factor))
                     if np.isnan(ewma_inter_arr) and not np.isnan(inter_arr): ewma_inter_arr = inter_arr
-                    if not np.isnan(ewma_rtt): ewma_rtt = (rtt * alpha) + (rtt * (1 - alpha))
+                    if not np.isnan(ewma_rtt): ewma_rtt = (rtt * ewma_smoothing_factor) + (rtt * (1 - ewma_smoothing_factor))
                     if np.isnan(ewma_rtt) and not np.isnan(rtt): ewma_rtt = rtt
 
                     if cwnd < ssthresh: cwnd += 1.0
@@ -164,13 +180,14 @@ def recv_acks():
         traceback.print_exc(); return
 
 def retransmit():
-    global cwnd, ssthresh, window_size, lpthresh, alpha, beta, gamma, delta, running, pending_acks, send_lock
+    global cwnd, ssthresh, window_size, lpthresh, running, pending_acks, send_lock
+    global ewma_smoothing_factor, throughput_factor, latency_factor, loss_rate_factor
     global curr_packet, last_packet, sent_packets, lost_packets, cwnd_order, last_ack, rtt, min_rtt, ratio_rtt
     global prev_send, curr_send, inter_send, min_inter_send, ratio_inter_send
     global prev_arr, curr_arr, inter_arr, min_inter_arr, ratio_inter_arr
     global ts_inter_send, ts_inter_arr, ts_rtt, ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
     global ewma_inter_send, ewma_inter_arr, ewma_rtt, throughput_timestamps, loss_rate_timestamps
-    global throughput, latency, loss_rate, reward, model, df, row
+    global throughput, max_throughput, latency, loss_rate, reward, delay, delay_factor, prev_utility, curr_utility, diff_utility, model, df, row
 
     try:
         while running or pending_acks:
@@ -199,12 +216,25 @@ def retransmit():
                         ts_inter_send = ts_inter_send[1:TS_SIZE + 1] + [inter_send]
                         ts_ratio_inter_send = ts_ratio_inter_send[1:TS_SIZE + 1] + [ratio_inter_send]
 
-                        if not np.isnan(ewma_inter_send): ewma_inter_send = (inter_send * alpha) + (ewma_inter_send * (1 - alpha))
+                        if not np.isnan(ewma_inter_send): ewma_inter_send = (inter_send * ewma_smoothing_factor) + (ewma_inter_send * (1 - ewma_smoothing_factor))
                         if np.isnan(ewma_inter_send) and not np.isnan(inter_send): ewma_inter_send = inter_send
 
                         throughput = len(throughput_timestamps) / window_size
-                        loss_rate = len(loss_rate_timestamps) / window_size
-                        reward = (beta * throughput) - (gamma * latency) - (delta * loss_rate)
+                        if throughput > max_throughput: max_throughput = throughput
+                        loss_rate = len(loss_rate_timestamps) / window_size; delay = rtt - min_rtt
+                        reward = (throughput_factor * throughput) - (latency_factor * latency) - (loss_rate_factor * loss_rate)
+
+                        throughput_utility = 0; delay_utility = 0; loss_rate_utility = 0
+                        if max_throughput != 0: np.log(throughput / max_throughput)
+                        if delay != 0: delay_factor * np.log(delay)
+                        if loss_rate != 0: loss_rate_factor * np.log(loss_rate)
+                        utility = throughput_utility - delay_utility + loss_rate_utility
+                        prev_utility = curr_utility; curr_utility = utility; diff_utility = curr_utility - prev_utility
+
+                        if diff_utility >= 1: reward = 10
+                        elif diff_utility < 1 and diff_utility >= 0: reward = 2
+                        elif diff_utility < 0 and diff_utility >= -1: reward = -2
+                        elif diff_utility < -1: reward = -10
 
                         row = [num, idx, cwnd, pending_acks[num]['cwnd_order'], ssthresh, send_time]
                         row += [latency, rtt, loss_rate, overall_loss_rate] + [inter_send, min_inter_send, ewma_inter_send]
