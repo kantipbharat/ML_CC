@@ -3,12 +3,49 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.model_selection import GridSearchCV
+import matplotlib.pyplot as plt
+import seaborn as sns
 from helper import *
 
-start_time = time.time()
+if len(sys.argv) == 1:
+    print("Must include version!"); exit(1)
 
-df = pd.read_csv(CSV_NAME, index_col=0); df = df.iloc[:, 2:]
+version = sys.argv[1]
+version_name = ''
+if version == '0': version_name += 'aimd'
+elif version == '1': version_name += 'newreno'
+elif version == '2': version_name += 'lp'
+elif version == '3': version_name += 'rl'
+else: 
+    print("Invaid version!"); exit(1)
+
+start_time = time.time()
+csv_name = 'datasets/' + version_name + '.csv'
+df = pd.read_csv(csv_name, index_col=0); df = df.dropna()
+
+rl_status_cols = ['ewma_inter_send', 'ewma_inter_arr', 'ratio_rtt', 'ssthresh', 'cwnd']
+
+ranges = {}
+data = df[rl_status_cols]
+for column in rl_status_cols:
+    first = np.percentile(data[column], 1)
+    last = np.percentile(data[column], 99)
+    ranges[column] = (first, last)
+
+ranges_name = 'objects/' + version_name + '.pkl'
+if os.path.exists(ranges_name): os.remove(ranges_name)
+pickle.dump(ranges, open(ranges_name, 'wb'))
+
+cols_to_remove = ['num', 'idx'] + ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_loss_rate', 'delay']
+cols_to_remove += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt', 'min_inter_send', 'min_inter_arr', 'min_rtt']
+
+print(df.columns)
+
+print(df)
+df = df.drop(cols_to_remove, axis=1)
 X = df.iloc[:, :-1]; y = df.iloc[:, -1]
+print(df)
+
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 X_train = X_train.values
@@ -41,5 +78,6 @@ print("Best Train Accuracy: " + str(train_accuracy * 100) + "%")
 
 print(time.time() - start_time)
 
-if os.path.exists(PKL_NAME): os.remove(PKL_NAME)
-pickle.dump(best_model, open(PKL_NAME, 'wb'))
+model_name = 'models/' + version_name + '.pkl'
+if os.path.exists(model_name): os.remove(model_name)
+pickle.dump(best_model, open(model_name, 'wb'))

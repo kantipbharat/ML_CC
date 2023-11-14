@@ -30,8 +30,6 @@ TS_SIZE = 8
 MAX_TRANSMIT = 2
 
 RUNTIME = 10
-CSV_NAME = 'out.csv'
-PKL_NAME = 'model.sav'
 
 def recv_packet_func(sock, exp_typ):
     data = sock.recv(PACKET_SIZE)
