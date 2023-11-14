@@ -30,26 +30,11 @@ ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt = [[np.NaN] * (TS_SIZE + 1
 throughput, max_throughput, loss_rate, overall_loss_rate = ([0.0] * 4); delay = np.NaN
 throughput_timestamps, loss_rate_timestamps = [deque()] * 2; interval = 1
 
-columns = ['num', 'idx', 'cwnd', 'cwnd_order']
-columns += ['ewma_inter_send', 'min_inter_send']
-columns += ['ts_inter_send_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['ts_ratio_inter_send_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['ewma_inter_arr', 'min_inter_arr']
-columns += ['ts_inter_arr_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['ts_ratio_inter_arr_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['min_rtt'] + ['ts_rtt_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['ts_ratio_rtt_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['recvd']
-columns += ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_loss_rate', 'delay']
-columns += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt']
-
-df = pd.DataFrame(columns=columns)
+df = pd.DataFrame(columns=COLUMNS)
 df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
 
 csv_name = 'datasets/aimd.csv'
 if os.path.exists(csv_name): os.remove(csv_name)
-
-row = [np.NaN] * len(columns)
 
 def send_packs():
     global running, pending_acks, send_lock, df
@@ -94,17 +79,17 @@ def send_packs():
                 row += [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(1, TS_SIZE + 1)]
                 row += [min_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)] 
                 row += [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
-                row += [0] + [ssthresh, throughput, max_throughput, loss_rate, overall_loss_rate, delay]
-                row += [ratio_inter_send, ratio_inter_arr, ratio_rtt]
-                df.loc[len(df)] = row
+                input_row = [ssthresh, throughput, max_throughput, loss_rate, overall_loss_rate, delay]
+                input_row += [ratio_inter_send, ratio_inter_arr, ratio_rtt]
+                df.loc[len(df)] = row + [0] + input_row
 
                 cwnd_order += 1; sent_packets += 1; last_packet = curr_packet; curr_packet += 1
                 if cwnd_order > cwnd: cwnd_order = 1
                 if sent_packets % 10000 == 0: print("Sent " + str(sent_packets) + " packets.")
 
                 if len(df) < 5000: continue
-                df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name))
-                df = df.iloc[0:0]
+                df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name)); df = df.iloc[0:0]
+
     except Exception as err:
         print("The following error occured while sending packets: " + str(err))
         traceback.print_exc(); return
@@ -148,7 +133,7 @@ def recv_acks():
                 ts_ratio_rtt = ts_ratio_rtt[1:TS_SIZE + 1] + [ratio_rtt]
 
                 if cwnd < ssthresh: cwnd += MSS
-                else: cwnd += MSS * (MSS / cwnd)
+                else: cwnd += MSS / cwnd
                 if cwnd_order > cwnd: cwnd_order = 1
     except Exception as err:
         print("The following error occured while receiving packets: " + str(err))
@@ -170,7 +155,7 @@ def retransmit():
         while running or pending_acks:
             time.sleep(TIMEOUT)
             with send_lock:
-                if pending_acks: ssthresh = max(cwnd / 2, 2); cwnd = 1
+                if pending_acks: ssthresh = max(cwnd / 2, 2); cwnd = MSS
                 for num in pending_acks.keys():
                     if num > last_packet: continue
                     if len(df[df['num'] == num]) >= MAX_TRANSMIT:
@@ -205,15 +190,14 @@ def retransmit():
                     row += [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(1, TS_SIZE + 1)]
                     row += [min_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)] 
                     row += [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
-                    row += [0] + [ssthresh, throughput, max_throughput, loss_rate, overall_loss_rate, delay]
-                    row += [ratio_inter_send, ratio_inter_arr, ratio_rtt]
-                    df.loc[len(df)] = row
+                    input_row = [ssthresh, throughput, max_throughput, loss_rate, overall_loss_rate, delay]
+                    input_row += [ratio_inter_send, ratio_inter_arr, ratio_rtt]
+                    df.loc[len(df)] = row + [0] + input_row
 
                     sent_packets += 1; lost_packets += 1
 
                     if len(df) < 5000: continue
-                    df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name))
-                    df = df.iloc[0:0]
+                    df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name)); df = df.iloc[0:0]
 
     except Exception as err:
         print("The following error occured while retransmitting packets: " + str(err))
@@ -244,7 +228,7 @@ finally:
     except Exception as err: print("The following error occured before terminating the connection: " + str(err)); traceback.print_exc()
     finally:
         if cli_socket: cli_socket.close()
-        
+
         df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name))
 
         if sent_packets > 0:

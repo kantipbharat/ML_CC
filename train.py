@@ -37,14 +37,10 @@ if os.path.exists(ranges_name): os.remove(ranges_name)
 pickle.dump(ranges, open(ranges_name, 'wb'))
 
 cols_to_remove = ['num', 'idx'] + ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_loss_rate', 'delay']
-cols_to_remove += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt', 'min_inter_send', 'min_inter_arr', 'min_rtt']
+cols_to_remove += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt']
 
-print(df.columns)
-
-print(df)
 df = df.drop(cols_to_remove, axis=1)
 X = df.iloc[:, :-1]; y = df.iloc[:, -1]
-print(df)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 

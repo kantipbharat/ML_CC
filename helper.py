@@ -31,6 +31,21 @@ MAX_TRANSMIT = 2
 
 RUNTIME = 10
 
+VERSION_MAP = {'0':'aimd', '1':'newreno', '2':'lp', '3':'rl'}
+
+COLUMNS = ['num', 'idx', 'cwnd', 'cwnd_order']
+COLUMNS += ['ewma_inter_send', 'min_inter_send']
+COLUMNS += ['ts_inter_send_' + str(i + 1) for i in range(TS_SIZE)]
+COLUMNS += ['ts_ratio_inter_send_' + str(i + 1) for i in range(TS_SIZE)]
+COLUMNS += ['ewma_inter_arr', 'min_inter_arr']
+COLUMNS += ['ts_inter_arr_' + str(i + 1) for i in range(TS_SIZE)]
+COLUMNS += ['ts_ratio_inter_arr_' + str(i + 1) for i in range(TS_SIZE)]
+COLUMNS += ['min_rtt'] + ['ts_rtt_' + str(i + 1) for i in range(TS_SIZE)]
+COLUMNS += ['ts_ratio_rtt_' + str(i + 1) for i in range(TS_SIZE)]
+COLUMNS += ['recvd']
+COLUMNS += ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_loss_rate', 'delay']
+COLUMNS += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt']
+
 def recv_packet_func(sock, exp_typ):
     data = sock.recv(PACKET_SIZE)
     if not data: raise Exception("No information received. Terminating...")

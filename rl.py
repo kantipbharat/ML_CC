@@ -4,6 +4,7 @@ if len(sys.argv) == 1:
     print("Must include version!"); exit(1)
 
 cli_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM); cli_socket.connect(ADDR); start_time = 0.0
+cli_socket.settimeout(5)
 
 try:
     cli_socket.send(Packet(0, 0, SYN).to_bytes())
@@ -31,50 +32,43 @@ rtt, ratio_rtt = [np.NaN] * 2; min_inter_send, min_inter_arr, min_rtt = [sys.max
 ts_inter_send, ts_inter_arr, ts_rtt = [[np.NaN] * (TS_SIZE + 1)] * 3
 ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt = [[np.NaN] * (TS_SIZE + 1)] * 3
 
-throughput, max_throughput, loss_rate = ([0.0] * 3); delay = np.NaN
+throughput, max_throughput, loss_rate, overall_loss_rate = ([0.0] * 4); delay = np.NaN
 throughput_timestamps, loss_rate_timestamps = [deque()] * 2
 delay_factor = 0.01; loss_rate_factor = 0.1; interval = 1
 prev_utility, curr_utility, diff_utility, reward = [0.0] * 4
 
-feature_vector = [ewma_inter_send, ewma_inter_arr, ratio_rtt, ssthresh, cwnd]
-actions = [-1, 0, 1, 3]
-l = 10; Q_table = np.zeros((l, l, l, l, l, len(actions)))
+state_cols = ['ewma_inter_send', 'ewma_inter_arr', 'ratio_rtt', 'ssthresh', 'cwnd']
+state_vector = [ewma_inter_send, ewma_inter_arr, ratio_rtt, ssthresh, cwnd]
+state_bin_vector = [0] * 5; actions = [-1, 0, 1, 3]
+l = 10; discount_factor = 0.4; epsilon = 0.1; cwnd_increase = 1.0
+Q_table = np.zeros((l, l, l, l, l, len(actions)))
+history = [{'state':state_bin_vector, 'i':0, 'n-2':0.0, 'n-1':0.0}] * 2
 
-columns = ['num', 'idx', 'cwnd', 'cwnd_order']
-columns += ['ewma_inter_send', 'min_inter_send']
-columns += ['ts_inter_send_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['ts_ratio_inter_send_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['ewma_inter_arr', 'min_inter_arr']
-columns += ['ts_inter_arr_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['ts_ratio_inter_arr_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['min_rtt'] + ['ts_rtt_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['ts_ratio_rtt_' + str(i + 1) for i in range(TS_SIZE)]
-columns += ['recvd']
-columns += ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_loss_rate', 'delay']
-columns += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt']
-
-df = pd.DataFrame(columns=columns)
+df = pd.DataFrame(columns=COLUMNS)
 df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
 
-csv_name = 'rl.csv'
+csv_name = 'datasets/rl.csv'
 if os.path.exists(csv_name): os.remove(csv_name)
 
-version = sys.argv[1]
-version_name = ''
-if version == '0': version_name += 'aimd'
-elif version == '1': version_name += 'newreno'
-elif version == '2': version_name += 'lp'
-elif version == '3': version_name += 'rl'
-else: 
+version = sys.argv[1]; version_name = ''
+if version in VERSION_MAP.keys(): version_name = VERSION_MAP[version]
+else:
     print("Invaid version!"); exit(1)
 
 ranges_name = 'objects/' + version_name + '.pkl'
 ranges = pickle.load(open(ranges_name, 'rb'))
 
-print(ranges)
-exit(0)
-
-row = [np.NaN] * len(columns)
+def find_bin(col, val):
+    global ranges, l
+    min_val, max_val = ranges[col]
+    bin_size = (max_val - min_val) / l
+    if val < min_val: return 0
+    elif val > max_val: return l - 1
+    else: 
+        bin_val = int((val - min_val) // bin_size)
+        if bin_val < 0: bin_val == 0
+        if bin_val >= l - 1: bin_val = l - 1
+        return bin_val
 
 def send_packs():
     global running, pending_acks, send_lock, df
@@ -86,10 +80,11 @@ def send_packs():
     global rtt, ratio_rtt, min_inter_send, min_inter_arr, min_rtt
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
-    global throughput, max_throughput, loss_rate, delay
+    global throughput, max_throughput, loss_rate, overall_loss_rate, delay
     global throughput_timestamps, loss_rate_timestamps
     global delay_factor, loss_rate_factor, interval
     global prev_utility, curr_utility, diff_utility, reward
+    global state_cols, state_vector, actions, discount_factor, epsilon, cwnd_increase, Q_table, history
 
     try:
         while running:
@@ -111,20 +106,7 @@ def send_packs():
                 throughput = len(throughput_timestamps) / interval
                 if throughput > max_throughput: max_throughput = throughput
                 loss_rate = len(loss_rate_timestamps) / interval; delay = rtt - min_rtt
- 
-                throughput_utility = 0; delay_utility = 0; loss_rate_utility = 0
-                if max_throughput != 0: np.log(throughput / max_throughput)
-                if delay != 0 and delay != np.NaN: delay_factor * np.log(delay)
-                if loss_rate != 0: loss_rate_factor * np.log(loss_rate)
-                utility = throughput_utility - delay_utility + loss_rate_utility
-                prev_utility = curr_utility; curr_utility = utility; diff_utility = curr_utility - prev_utility
-
-                if diff_utility >= 1: reward = 10
-                elif diff_utility < 1 and diff_utility >= 0: reward = 2
-                elif diff_utility < 0 and diff_utility >= -1: reward = -2
-                elif diff_utility < -1: reward = -10
-
-                feature_vector = [ewma_inter_send, ewma_inter_arr, ratio_rtt, ssthresh, cwnd]
+                if sent_packets != 0: overall_loss_rate = lost_packets / sent_packets
 
                 row = [curr_packet, idx, cwnd, cwnd_order]
                 row += [ewma_inter_send, min_inter_send]
@@ -135,18 +117,16 @@ def send_packs():
                 row += [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(1, TS_SIZE + 1)]
                 row += [min_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)] 
                 row += [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
-                row += [0] + [ssthresh, throughput, max_throughput, loss_rate, overall_loss_rate, delay]
-                row += [ratio_inter_send, ratio_inter_arr, ratio_rtt]
-                df.loc[len(df)] = row
+                input_row = [ssthresh, throughput, max_throughput, loss_rate, overall_loss_rate, delay]
+                input_row += [ratio_inter_send, ratio_inter_arr, ratio_rtt]
+                df.loc[len(df)] = row + [0] + input_row
 
                 cwnd_order += 1; sent_packets += 1; last_packet = curr_packet; curr_packet += 1
                 if cwnd_order > cwnd: cwnd_order = 1
                 if sent_packets % 10000 == 0: print("Sent " + str(sent_packets) + " packets.")
 
                 if len(df) < 5000: continue
-                df = df.dropna()
-                df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name))
-                df = df.iloc[0:0]
+                df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name)); df = df.iloc[0:0]
                 
     except Exception as err:
         print("The following error occured while sending packets: " + str(err))
@@ -162,10 +142,11 @@ def recv_acks():
     global rtt, ratio_rtt, min_inter_send, min_inter_arr, min_rtt
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
-    global throughput, max_throughput, loss_rate, delay
+    global throughput, max_throughput, loss_rate, overall_loss_rate, delay
     global throughput_timestamps, loss_rate_timestamps
     global delay_factor, loss_rate_factor, interval
     global prev_utility, curr_utility, diff_utility, reward
+    global state_cols, state_vector, actions, discount_factor, epsilon, cwnd_increase, Q_table, history
 
     try:
         while running or pending_acks:
@@ -176,15 +157,7 @@ def recv_acks():
                 current_time = time.time() - start_time; throughput_timestamps.append(ack_recv_time)
                 while throughput_timestamps and current_time - throughput_timestamps[0] > interval: throughput_timestamps.popleft()
 
-                if recv_packet.num not in pending_acks:
-                    duplicate_acks += 1
-                    if duplicate_acks == 3 and not recovery_phase:
-                        ssthresh = max(cwnd / 2, 2); cwnd = ssthresh + (3 * MSS)
-                        recovery_phase = True
-                        high_ack = last_ack
-                    elif recovery_phase: cwnd += MSS
-                    continue
-
+                if recv_packet.num not in pending_acks: continue
                 del pending_acks[recv_packet.num]; last_ack += 1
 
                 prev_arr = curr_arr; curr_arr = ack_recv_time; inter_arr = curr_arr - prev_arr
@@ -201,17 +174,38 @@ def recv_acks():
                 ts_rtt = ts_rtt[1:TS_SIZE + 1] + [rtt]
                 ts_ratio_rtt = ts_ratio_rtt[1:TS_SIZE + 1] + [ratio_rtt]
 
-                if recovery_phase:
-                    if recv_packet.num >= high_ack:
-                        cwnd = ssthresh; recovery_phase = False
-                    else: cwnd = max(ssthresh + ((duplicate_acks - 3) * MSS), MSS)
-                    duplicate_acks = 0
-                    continue
-
                 if cwnd < ssthresh: cwnd += MSS
-                else: cwnd += MSS * (MSS / cwnd)
+                else: cwnd += max(cwnd_increase / cwnd, MSS)
                 if cwnd_order > cwnd: cwnd_order = 1
-                duplicate_acks = 0
+
+                state_vector = [ewma_inter_send, ewma_inter_arr, ratio_rtt, ssthresh, cwnd]
+                if np.any(np.isnan(state_vector)): continue
+
+                throughput_utility = 0; delay_utility = 0; loss_rate_utility = 0
+                if max_throughput != 0: np.log(throughput / max_throughput)
+                if delay != 0 and delay != np.NaN: delay_factor * np.log(delay)
+                if loss_rate != 0: loss_rate_factor * np.log(loss_rate)
+                utility = throughput_utility - delay_utility + loss_rate_utility
+                prev_utility = curr_utility; curr_utility = utility; diff_utility = curr_utility - prev_utility
+
+                if diff_utility >= 1: reward = 10
+                elif diff_utility < 1 and diff_utility >= 0: reward = 2
+                elif diff_utility < 0 and diff_utility >= -1: reward = -2
+                elif diff_utility < -1: reward = -10
+
+                state_bin_vector = [find_bin(state_cols[i], state_vector[i]) for i in range(len(state_vector))]
+                Qs = Q_table[tuple(state_bin_vector)]
+                if random.choices([0, 1], weights=(epsilon, 1 - epsilon))[0] == 0: i = random.randint(0, len(actions) - 1)
+                else:
+                    maxes = [i for i, val in enumerate(Qs) if val == max(Qs)]; i = maxes[0]
+                    if len(maxes) > 1: i = random.choices(maxes)[0]
+                cwnd_increase = actions[i]
+
+                new_Q_one = (1 - ewma_smoothing_factor) * history[0]['n-2']
+                new_Q_two = ewma_smoothing_factor * (reward + (discount_factor * history[1]['n-1']))
+                Q_table[tuple(history[0]['state'])][history[0]['i']] = new_Q_one + new_Q_two
+                history[0] = history[1]; history[0]['n-1'] = Q_table[tuple(history[0]['state'])][history[0]['i']]
+                history[1]['state'] = state_bin_vector; history[1]['i'] = i; history[1]['n-2'] = Qs[i]
 
     except Exception as err:
         print("The following error occured while receiving packets: " + str(err))
@@ -227,22 +221,23 @@ def retransmit():
     global rtt, ratio_rtt, min_inter_send, min_inter_arr, min_rtt
     global ts_inter_send, ts_inter_arr, ts_rtt
     global ts_ratio_inter_send, ts_ratio_inter_arr, ts_ratio_rtt
-    global throughput, max_throughput, loss_rate, delay
+    global throughput, max_throughput, loss_rate, overall_loss_rate, delay
     global throughput_timestamps, loss_rate_timestamps
     global delay_factor, loss_rate_factor, interval
     global prev_utility, curr_utility, diff_utility, reward
+    global state_cols, state_vector, actions, discount_factor, epsilon, cwnd_increase, Q_table, history
 
     try:
         while running or pending_acks:
             time.sleep(TIMEOUT)
             with send_lock:
-                if pending_acks:
-                    ssthresh = max(cwnd / 2, 2); cwnd = 1
-                    duplicate_acks = 0; recovery_phase = True; high_ack = last_ack
+                if pending_acks: ssthresh = max(cwnd / 2, MSS * 2); cwnd = MSS
+                too_many_duplicates = []
                 for num in pending_acks.keys():
                     if num > last_packet: continue
                     if len(df[df['num'] == num]) >= MAX_TRANSMIT:
-                        del pending_acks[num]; continue
+                        too_many_duplicates.append(num)
+                        continue
                     
                     current_time = time.time() - start_time; loss_rate_timestamps.append(current_time)
                     while loss_rate_timestamps and current_time - loss_rate_timestamps[0] > interval: loss_rate_timestamps.popleft()
@@ -262,20 +257,7 @@ def retransmit():
                     throughput = len(throughput_timestamps) / interval
                     if throughput > max_throughput: max_throughput = throughput
                     loss_rate = len(loss_rate_timestamps) / interval; delay = rtt - min_rtt
-
-                    throughput_utility = 0; delay_utility = 0; loss_rate_utility = 0
-                    if max_throughput != 0: np.log(throughput / max_throughput)
-                    if delay != 0 and delay != np.NaN: delay_factor * np.log(delay)
-                    if loss_rate != 0: loss_rate_factor * np.log(loss_rate)
-                    utility = throughput_utility - delay_utility + loss_rate_utility
-                    prev_utility = curr_utility; curr_utility = utility; diff_utility = curr_utility - prev_utility
-
-                    if diff_utility >= 1: reward = 10
-                    elif diff_utility < 1 and diff_utility >= 0: reward = 2
-                    elif diff_utility < 0 and diff_utility >= -1: reward = -2
-                    elif diff_utility < -1: reward = -10
-
-                    feature_vector = [ewma_inter_send, ewma_inter_arr, ratio_rtt, ssthresh, cwnd]
+                    if sent_packets != 0: overall_loss_rate = lost_packets / sent_packets
 
                     row = [num, idx, cwnd, pending_acks[num]]
                     row += [ewma_inter_send, min_inter_send]
@@ -285,16 +267,17 @@ def retransmit():
                     row += [ts_inter_arr[i] - ts_inter_arr[0] for i in range(1, TS_SIZE + 1)] 
                     row += [ts_ratio_inter_arr[i] - ts_ratio_inter_arr[0] for i in range(1, TS_SIZE + 1)]
                     row += [min_rtt] + [ts_rtt[i] - ts_rtt[0] for i in range(1, TS_SIZE + 1)] 
-                    row += [0] + [ssthresh, throughput, max_throughput, loss_rate, overall_loss_rate, delay]
-                    row += [ratio_inter_send, ratio_inter_arr, ratio_rtt]
-                    df.loc[len(df)] = row
+                    row += [ts_ratio_rtt[i] - ts_ratio_rtt[0] for i in range(1, TS_SIZE + 1)]
+                    input_row = [ssthresh, throughput, max_throughput, loss_rate, overall_loss_rate, delay]
+                    input_row += [ratio_inter_send, ratio_inter_arr, ratio_rtt]
+                    df.loc[len(df)] = row + [0] + input_row
 
                     sent_packets += 1; lost_packets += 1
 
                     if len(df) < 5000: continue
-                    df = df.dropna()
-                    df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name))
-                    df = df.iloc[0:0]
+                    df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name)); df = df.iloc[0:0]
+                
+                for num in too_many_duplicates: del pending_acks[num]
 
     except Exception as err:
         print("The following error occured while retransmitting packets: " + str(err))
@@ -326,7 +309,7 @@ finally:
     finally:
         if cli_socket: cli_socket.close()
         
-        df = df.dropna(); df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name))
+        df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name))
 
         if sent_packets > 0:
             overall_loss_rate = round((lost_packets / sent_packets) * 100, 8)
