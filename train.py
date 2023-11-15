@@ -50,14 +50,11 @@ y_train = y_train.values
 y_test = y_test.values
 
 param_grid = {
-    'n_estimators': [100, 200, 300],
-    'max_depth': [10, 20, 30, None],
-    'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 4],
-    'bootstrap': [True, False]
+    'n_estimators': [100, 200, 500],
+    'max_depth': [20, 50, None],
 }
 
-rf_model = RandomForestClassifier(random_state=42)
+rf_model = RandomForestClassifier(random_state=42, bootstrap=True, n_jobs=-1)
 grid_search = GridSearchCV(rf_model, param_grid, cv=10, scoring='accuracy', verbose=2)
 grid_search.fit(X_train, y_train)
 
@@ -66,6 +63,10 @@ best_model = grid_search.best_estimator_
 y_pred = best_model.predict(X_test)
 test_accuracy = accuracy_score(y_test, y_pred)
 train_accuracy = accuracy_score(y_train, best_model.predict(X_train))
+
+cv_results = grid_search.cv_results_
+for mean_score, params in zip(cv_results["mean_test_score"], cv_results["params"]):
+    print(f"Mean accuracy: {mean_score:.3f} for Parameters: {params}")
 
 print("Best Parameters: " + str(grid_search.best_params_))
 print("Best Score: " + str(grid_search.best_score_))

@@ -47,13 +47,18 @@ COLUMNS += ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_lo
 COLUMNS += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt']
 
 def recv_packet_func(sock, exp_typ):
-    data = sock.recv(PACKET_SIZE)
-    if not data: raise Exception("No information received. Terminating...")
-    if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
-    if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
-    recv_packet = Packet.from_bytes(data)
-    if recv_packet.typ not in exp_typ: raise Exception("Expected packet type " + str(exp_typ) + " but received " + str(recv_packet.typ) + ". Terminating...")
-    return recv_packet
+    try:
+        data = sock.recv(PACKET_SIZE)
+        if not data: raise Exception("No information received. Terminating...")
+        if len(data) > PACKET_SIZE: raise Exception("Too many bytes received. Terminating...")
+        if len(data) < PACKET_SIZE: raise Exception("Too few bytes received. Terminating...")
+        recv_packet = Packet.from_bytes(data)
+        if not recv_packet: return None
+        if recv_packet.typ not in exp_typ: raise Exception("Expected packet type " + str(exp_typ) + " but received " + str(recv_packet.typ) + ". Terminating...")
+        return recv_packet
+    except socket.timeout: print("The receive function timed out!")
+    except Exception as err: print("The following error occured before terminating the connection: " + str(err))
+
 
 class Packet:
     PACK_FORM = '!IIIdd'

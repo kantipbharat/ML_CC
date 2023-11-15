@@ -11,7 +11,6 @@ try:
     cli_socket.send(Packet(0, 0, SYN_ACK).to_bytes())
     cli_socket.send(Packet(0, 0, SYN).to_bytes())
     recv_packet = recv_packet_func(cli_socket, [SYN_ACK])
-
     start_time = recv_packet.recv_time
     print("4-way handshake to establish connection was successful.")
 except KeyboardInterrupt:
@@ -28,11 +27,8 @@ try:
     while True:
         if recv_packets % 10000 == 0:
             print("Received " + str(recv_packets) + " packets.")
-
         recv_packet = recv_packet_func(cli_socket,[FIN, DATA])
-        recv_time = time.time() - start_time
-        recv_packets += 1
-
+        recv_time = time.time() - start_time; recv_packets += 1
         if recv_packet.typ == FIN: break
         elif recv_packet.typ == DATA: cli_socket.send(Packet(recv_packet.num, recv_packet.idx, ACK, send_time=recv_packet.send_time, recv_time=recv_time).to_bytes())
         else: raise Exception("Received an unexpected packet type: " + str(recv_packet.typ))

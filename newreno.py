@@ -1,6 +1,7 @@
 from helper import *
 
-cli_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM); cli_socket.connect(ADDR); start_time = 0.0
+cli_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+cli_socket.connect(ADDR); cli_socket.settimeout(5); start_time = 0.0
 
 try:
     cli_socket.send(Packet(0, 0, SYN).to_bytes())
@@ -12,7 +13,7 @@ except KeyboardInterrupt:
     cli_socket.close(); exit(0)
 except Exception as err:
     print("The following error occured before establishing connection: " + str(err))
-    cli_socket.close(); traceback.print_exc(); exit(1)
+    cli_socket.close(); exit(1)
 
 running = True; pending_acks = {}; send_lock = threading.Lock()
 curr_packet = 1; last_packet = 0; sent_packets = 0; lost_packets = 0
@@ -32,8 +33,6 @@ throughput, max_throughput, loss_rate, overall_loss_rate = ([0.0] * 4); delay = 
 throughput_timestamps, loss_rate_timestamps = [deque()] * 2; interval = 1
 
 df = pd.DataFrame(columns=COLUMNS)
-df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
-
 csv_name = 'datasets/newreno.csv'
 if os.path.exists(csv_name): os.remove(csv_name)
 
@@ -90,11 +89,11 @@ def send_packs():
                 if sent_packets % 10000 == 0: print("Sent " + str(sent_packets) + " packets.")
 
                 if len(df) < 5000: continue
+                df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
                 df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name)); df = df.iloc[0:0]
 
     except Exception as err:
-        print("The following error occured while sending packets: " + str(err))
-        traceback.print_exc(); return
+        print("The following error occured while sending packets: " + str(err)); return
 
 def recv_acks():
     global running, pending_acks, send_lock, df
@@ -155,8 +154,7 @@ def recv_acks():
                 duplicate_acks = 0
 
     except Exception as err:
-        print("The following error occured while receiving packets: " + str(err))
-        traceback.print_exc(); return
+        print("The following error occured while receiving packets: " + str(err)); return
 
 def retransmit():
     global running, pending_acks, send_lock, df
@@ -186,7 +184,7 @@ def retransmit():
                     current_time = time.time() - start_time; loss_rate_timestamps.append(current_time)
                     while loss_rate_timestamps and current_time - loss_rate_timestamps[0] > interval: loss_rate_timestamps.popleft()
 
-                    print('Lost packet ' + str(num) + '. Attempting to retransmit.')
+                    #print('Lost packet ' + str(num) + '. Attempting to retransmit.')
                     idx = random.randint(1000, 9999); send_time = time.time() - start_time
                     cli_socket.send(Packet(num, idx, DATA, send_time=send_time).to_bytes())
 
@@ -219,11 +217,11 @@ def retransmit():
                     sent_packets += 1; lost_packets += 1
 
                     if len(df) < 5000: continue
+                    df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
                     df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name)); df = df.iloc[0:0]
 
     except Exception as err:
-        print("The following error occured while retransmitting packets: " + str(err))
-        traceback.print_exc(); return
+        print("The following error occured while retransmitting packets: " + str(err)); return
 
 send_thread = threading.Thread(target=send_packs, daemon=True)
 recv_thread = threading.Thread(target=recv_acks, daemon=True)
@@ -242,15 +240,17 @@ finally:
 
     try:
         send_thread.join(); recv_thread.join(); retransmit_thread.join()
+        recv_packet = recv_packet_func(cli_socket, [FIN_ACK])
+        while recv_packet and recv_packet.typ == ACK: recv_packet = recv_packet_func(cli_socket, [FIN_ACK])
         cli_socket.send(Packet(0, 0, FIN).to_bytes())
         recv_packet_func(cli_socket, [FIN_ACK]); recv_packet_func(cli_socket, [FIN])
         cli_socket.send(Packet(0, 0, FIN_ACK).to_bytes())
         print("4-way handshake to terminate connection was successful.")
     except KeyboardInterrupt: print("Client received a keyboard interrupt before terminating the connection. Terminating...")
-    except Exception as err: print("The following error occured before terminating the connection: " + str(err)); traceback.print_exc()
+    except Exception as err: print("The following error occured before terminating the connection: " + str(err))
     finally:
         if cli_socket: cli_socket.close()
-
+        df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
         df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name))
 
         if sent_packets > 0:
