@@ -29,7 +29,7 @@ FIN_ACK = 5
 TS_SIZE = 8
 MAX_TRANSMIT = 2
 
-RUNTIME = 10
+RUNTIME = 5000
 
 VERSION_MAP = {'0':'aimd', '1':'newreno', '2':'lp', '3':'rl'}
 
