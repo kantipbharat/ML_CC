@@ -60,7 +60,7 @@ def send_packs():
 
     try:
         while running:
-            if curr_packet > last_ack + math.floor(cwnd): continue
+            if len(pending_acks) >= math.floor(cwnd): continue
             idx = random.randint(1000, 9999); send_time = time.time() - start_time
 
             if not np.any(np.isnan(row[2:])):
@@ -124,6 +124,7 @@ def recv_acks():
     try:
         while running or pending_acks:
             recv_packet = recv_packet_func(cli_socket, [ACK])
+            if not recv_packet: continue
             ack_recv_time = time.time() - start_time
             with send_lock:
                 df.loc[(df['num'] == recv_packet.num) & (df['idx'] == recv_packet.idx), 'recvd'] = 1
@@ -234,8 +235,8 @@ finally:
 
     try:
         send_thread.join(); recv_thread.join(); retransmit_thread.join()
-        recv_packet = recv_packet_func(cli_socket, [FIN_ACK])
-        while recv_packet and recv_packet.typ == ACK: recv_packet = recv_packet_func(cli_socket, [FIN_ACK])
+        recv_packet = recv_packet_func(cli_socket, [ACK, FIN_ACK])
+        while recv_packet and recv_packet.typ == ACK: recv_packet = recv_packet_func(cli_socket, [ACK, FIN_ACK])
         cli_socket.send(Packet(0, 0, FIN).to_bytes())
         recv_packet_func(cli_socket, [FIN_ACK]); recv_packet_func(cli_socket, [FIN])
         cli_socket.send(Packet(0, 0, FIN_ACK).to_bytes())
