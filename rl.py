@@ -239,7 +239,7 @@ def retransmit():
                     current_time = time.time() - start_time; loss_rate_timestamps.append(current_time)
                     while loss_rate_timestamps and current_time - loss_rate_timestamps[0] > interval: loss_rate_timestamps.popleft()
 
-                    print('Lost packet ' + str(num) + '. Attempting to retransmit.')
+                    #print('Lost packet ' + str(num) + '. Attempting to retransmit.')
                     idx = random.randint(1000, 9999); send_time = time.time() - start_time
                     cli_socket.send(Packet(num, idx, DATA, send_time=send_time).to_bytes())
 
@@ -311,6 +311,8 @@ finally:
         df = df.astype({"num":"int", "idx":"int", "cwnd_order":"int", "recvd":"int"})
         df.to_csv(csv_name, mode='a', header=not os.path.exists(csv_name))
 
+        print("Sent: " + str(sent_packets) + " Packets")
+        print("Lost: " + str(lost_packets) + " Packets")
         if sent_packets > 0:
             overall_loss_rate = round((lost_packets / sent_packets) * 100, 8)
             print("Packet loss rate was: " + str(overall_loss_rate) + "%")

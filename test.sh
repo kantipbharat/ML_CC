@@ -43,6 +43,14 @@ python rl.py 1
 sleep 2
 
 sleep 2
+python gen_dataframes.py 0
+sleep 2
+
+sleep 2
+python gen_dataframes.py 1
+sleep 2
+
+sleep 2
 python gen_models.py 0
 sleep 2
 

@@ -19,8 +19,8 @@ elif version == '3': version_name += 'rl'
 else: 
     print("Invaid version!"); exit(1)
 
-csv_name = 'datasets/' + version_name + '.csv'
-df = pd.read_csv(csv_name, index_col=0); df = df.dropna()
+df_name = 'dataframes/' + version_name + '.pkl'
+df = pickle.load(open(df_name, 'rb')); df = df.dropna()
 
 cols_to_remove = ['num', 'idx'] + ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_loss_rate', 'delay']
 cols_to_remove += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt']
