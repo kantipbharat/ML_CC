@@ -19,22 +19,8 @@ elif version == '3': version_name += 'rl'
 else: 
     print("Invaid version!"); exit(1)
 
-start_time = time.time()
 csv_name = 'datasets/' + version_name + '.csv'
 df = pd.read_csv(csv_name, index_col=0); df = df.dropna()
-
-rl_status_cols = ['ewma_inter_send', 'ewma_inter_arr', 'ratio_rtt', 'ssthresh', 'cwnd']
-
-ranges = {}
-data = df[rl_status_cols]
-for column in rl_status_cols:
-    first = np.percentile(data[column], 1)
-    last = np.percentile(data[column], 99)
-    ranges[column] = (first, last)
-
-ranges_name = 'objects/' + version_name + '.pkl'
-if os.path.exists(ranges_name): os.remove(ranges_name)
-pickle.dump(ranges, open(ranges_name, 'wb'))
 
 cols_to_remove = ['num', 'idx'] + ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_loss_rate', 'delay']
 cols_to_remove += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt']
@@ -72,8 +58,6 @@ print("Best Parameters: " + str(grid_search.best_params_))
 print("Best Score: " + str(grid_search.best_score_))
 print("Best Test Accuracy: " + str(test_accuracy * 100) + "%")
 print("Best Train Accuracy: " + str(train_accuracy * 100) + "%")
-
-print(time.time() - start_time)
 
 model_name = 'models/' + version_name + '.pkl'
 if os.path.exists(model_name): os.remove(model_name)

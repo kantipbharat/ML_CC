@@ -163,7 +163,7 @@ def retransmit():
                     current_time = time.time() - start_time; loss_rate_timestamps.append(current_time)
                     while loss_rate_timestamps and current_time - loss_rate_timestamps[0] > interval: loss_rate_timestamps.popleft()
 
-                    #print('Lost packet ' + str(num) + '. Attempting to retransmit.')
+                    print('Lost packet ' + str(num) + '. Attempting to retransmit.')
                     idx = random.randint(1000, 9999); send_time = time.time() - start_time
                     cli_socket.send(Packet(num, idx, DATA, send_time=send_time).to_bytes())
 

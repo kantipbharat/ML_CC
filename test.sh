@@ -19,27 +19,11 @@ python newreno.py
 sleep 2
 
 sleep 2
-python train.py 0
+python gen_ranges.py 0
 sleep 2
 
 sleep 2
-python train.py 1
-sleep 2
-
-osascript -e 'tell application "Terminal"' \
-          -e 'do script "'"$SERVER_COMMANDS"'"' \
-          -e 'end tell'
-
-sleep 2
-python lp.py 0
-sleep 2
-
-osascript -e 'tell application "Terminal"' \
-          -e 'do script "'"$SERVER_COMMANDS"'"' \
-          -e 'end tell'
-
-sleep 2
-python lp.py 1
+python gen_ranges.py 1
 sleep 2
 
 osascript -e 'tell application "Terminal"' \
@@ -56,4 +40,28 @@ osascript -e 'tell application "Terminal"' \
 
 sleep 2
 python rl.py 1
+sleep 2
+
+sleep 2
+python gen_models.py 0
+sleep 2
+
+sleep 2
+python gen_models.py 1
+sleep 2
+
+osascript -e 'tell application "Terminal"' \
+          -e 'do script "'"$SERVER_COMMANDS"'"' \
+          -e 'end tell'
+
+sleep 2
+python lp.py 0
+sleep 2
+
+osascript -e 'tell application "Terminal"' \
+          -e 'do script "'"$SERVER_COMMANDS"'"' \
+          -e 'end tell'
+
+sleep 2
+python lp.py 1
 sleep 2

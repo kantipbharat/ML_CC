@@ -4,7 +4,7 @@ if len(sys.argv) == 1:
     print("Must include version!"); exit(1)
 
 cli_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-cli_socket.connect(ADDR); cli_socket.settimeout(5); start_time = 0.0
+cli_socket.connect(ADDR); cli_socket.settimeout(1); start_time = 0.0
 
 try:
     cli_socket.send(Packet(0, 0, SYN).to_bytes())
@@ -92,6 +92,9 @@ def send_packs():
 
             with send_lock:
                 pending_acks[curr_packet] = cwnd_order
+
+                if curr_packet % 10000 == 0:
+                    print("Sent " + str(curr_packet) + " packets.")
 
                 prev_send = curr_send; curr_send = send_time; inter_send = curr_send - prev_send
                 if inter_send < min_inter_send: min_inter_send = inter_send
@@ -239,7 +242,7 @@ def retransmit():
                     current_time = time.time() - start_time; loss_rate_timestamps.append(current_time)
                     while loss_rate_timestamps and current_time - loss_rate_timestamps[0] > interval: loss_rate_timestamps.popleft()
 
-                    #print('Lost packet ' + str(num) + '. Attempting to retransmit.')
+                    print('Lost packet ' + str(num) + '. Attempting to retransmit.')
                     idx = random.randint(1000, 9999); send_time = time.time() - start_time
                     cli_socket.send(Packet(num, idx, DATA, send_time=send_time).to_bytes())
 

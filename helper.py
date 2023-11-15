@@ -17,7 +17,7 @@ import zlib
 HOST = '127.0.0.1'
 PORT = 8080
 ADDR = (HOST, PORT)
-TIMEOUT = 1
+TIMEOUT = 2
 
 DATA = 0
 ACK = 1
@@ -29,7 +29,7 @@ FIN_ACK = 5
 TS_SIZE = 8
 MAX_TRANSMIT = 2
 
-RUNTIME = 5000
+RUNTIME = 10
 
 VERSION_MAP = {'0':'aimd', '1':'newreno', '2':'lp', '3':'rl'}
 

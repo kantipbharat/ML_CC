@@ -2,6 +2,7 @@ from helper import *
 
 serv_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 serv_socket.bind(ADDR); serv_socket.listen(5)
+
 print("Listening on " + str(HOST) + ":" + str(PORT))
 cli_socket, address = serv_socket.accept()
 print("Client connected from " + str(address[0]) + ":" + str(address[1]))
