@@ -10,13 +10,9 @@ from helper import *
 if len(sys.argv) == 1:
     print("Must include version!"); exit(1)
 
-version = sys.argv[1]
-version_name = ''
-if version == '0': version_name += 'aimd'
-elif version == '1': version_name += 'newreno'
-elif version == '2': version_name += 'lp'
-elif version == '3': version_name += 'rl'
-else: 
+version = sys.argv[1]; version_name = ''
+if version in VERSION_MAP.keys(): version_name = VERSION_MAP[version]
+else:
     print("Invaid version!"); exit(1)
 
 csv_name = 'datasets/' + version_name + '.csv'

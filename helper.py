@@ -31,7 +31,7 @@ MAX_TRANSMIT = 2
 
 RUNTIME = 20 #5000
 
-VERSION_MAP = {'0':'aimd', '1':'newreno', '2':'lp', '3':'rl'}
+VERSION_MAP = {'0':'aimd', '1':'newreno', '2':'lp-aimd', '3':'lp-newreno', '4':'rl-aimd', '5':'rl-newreno'}
 
 COLUMNS = ['num', 'idx', 'cwnd', 'cwnd_order']
 COLUMNS += ['ewma_inter_send', 'min_inter_send']
