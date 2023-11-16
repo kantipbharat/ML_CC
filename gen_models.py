@@ -36,7 +36,7 @@ y_train = y_train.values
 y_test = y_test.values
 
 param_grid = {
-    'n_estimators': [100, 200, 500],
+    'n_estimators': [20, 50, 100],
     'max_depth': [20, 50, None],
 }
 

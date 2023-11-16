@@ -18,7 +18,7 @@ except Exception as err:
 running = True; pending_acks = {}; send_lock = threading.Lock()
 curr_packet = 1; last_packet = 0; sent_packets = 0; lost_packets = 0
 
-MSS = 1.0; cwnd = MSS; ssthresh = 64.0; cwnd_order = 1; last_ack = 0 # initial variables for congestion control
+MSS = 1.0; cwnd = MSS; ssthresh = 64.0; cwnd_order = 1; last_ack = 0
 ewma_smoothing_factor = 0.7 # smoothing factor for EWMA calculations
 
 prev_send, curr_send, inter_send, ratio_inter_send, ewma_inter_send = [np.NaN] * 5
