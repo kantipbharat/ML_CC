@@ -1,12 +1,6 @@
-This library implements two learning-based TCP congestion control algorithms as outlined in 
-"Improving TCP Congestion Control with Machine Intelligence" by authors Yiming Kong, Hui Zang, 
-and Xiaoli Ma. The first, LP-TCP uses a Random Forests classifiers to adjust cwnd with packet 
-loss predictions. The second, RL-TCP, uses reinforcement learning to select the best cwnd 
-adjustment according to Q-values and rewards. 
+This library implements two learning-based TCP congestion control algorithms as outlined in "Improving TCP Congestion Control with Machine Intelligence" by authors Yiming Kong, Hui Zang, and Xiaoli Ma. The first, LP-TCP uses a Random Forests classifiers to adjust cwnd with packet loss predictions. The second, RL-TCP, uses reinforcement learning to select the best cwnd adjustment according to Q-values and rewards. 
 
-I've implemented all code included in the library from scratch. The files in this repository 
-were tested and validated on two MacOS systems running Sonoma 14.0 and Ventura 13.2.1 using 
-Python 3.11. Ensure Python and pip are available.
+I've implemented all code included in the library from scratch. The files in this repository were tested and validated on two MacOS systems running Sonoma 14.0 and Ventura 13.2.1 using Python 3.11. Ensure Python and pip are available.
 
 1. Navigate to the ML_CC repository
 2. pip install -r requirements.txt
@@ -16,8 +10,7 @@ Python 3.11. Ensure Python and pip are available.
 
 test.sh             script to run all files in order - aimd, newreno, lp, and rl
                     NOTE: to adjust the time each simulation runs for, change RUNTIME in helper.py
-                    NOTE: this script will rewrite the files in datasets, dataframes, models, and 
-                    objects ensure that any important files are renamed or moved to a different folder
+                    NOTE: this script will rewrite the files in datasets, dataframes, models, and objects ensure that any important files are renamed or moved to a different folder
 
 helper.py           shared, fixed variables, functions, and the packet class
 server.py           server which responds to packets with acknowledgements

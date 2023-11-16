@@ -15,9 +15,9 @@ if version in VERSION_MAP.keys(): version_name = VERSION_MAP[version]
 else:
     print("Invaid version!"); exit(1)
 
-csv_name = 'datasets/' + version_name + '.csv'
+csv_name = 'data/datasets/' + version_name + '.csv'
 df = pd.read_csv(csv_name, index_col=0); df = df.dropna()
 
-df_name = 'dataframes/' + version_name + '.pkl'
+df_name = 'data/dataframes/' + version_name + '.pkl'
 if os.path.exists(df_name): os.remove(df_name)
 pickle.dump(df, open(df_name, 'wb'))

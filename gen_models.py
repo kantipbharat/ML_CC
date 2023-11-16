@@ -15,10 +15,10 @@ if version in VERSION_MAP.keys(): version_name = VERSION_MAP[version]
 else:
     print("Invaid version!"); exit(1)
 
-df_name = 'dataframes/' + version_name + '.pkl'
+df_name = 'data/dataframes/' + version_name + '.pkl'
 df = pickle.load(open(df_name, 'rb')); df = df.dropna()
 
-cols_to_remove = ['num', 'idx'] + ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_loss_rate', 'delay']
+cols_to_remove = ['num', 'idx', 'send_time'] + ['ssthresh', 'throughput', 'max_throughput', 'loss_rate', 'overall_loss_rate', 'delay']
 cols_to_remove += ['ratio_inter_send', 'ratio_inter_arr', 'ratio_rtt']
 
 df = df.drop(cols_to_remove, axis=1)
@@ -32,8 +32,8 @@ y_train = y_train.values
 y_test = y_test.values
 
 param_grid = {
-    'n_estimators': [20, 50, 100],
-    'max_depth': [20, 50, None],
+    'n_estimators': [10, 20, 50],
+    'max_depth': [10, 20, 50]
 }
 
 rf_model = RandomForestClassifier(random_state=42, bootstrap=True, n_jobs=-1)
@@ -55,6 +55,6 @@ print("Best Score: " + str(grid_search.best_score_))
 print("Best Test Accuracy: " + str(test_accuracy * 100) + "%")
 print("Best Train Accuracy: " + str(train_accuracy * 100) + "%")
 
-model_name = 'models/' + version_name + '.pkl'
+model_name = 'data/models/' + version_name + '.pkl'
 if os.path.exists(model_name): os.remove(model_name)
 pickle.dump(best_model, open(model_name, 'wb'))

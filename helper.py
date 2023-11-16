@@ -29,11 +29,11 @@ FIN_ACK = 5
 TS_SIZE = 8
 MAX_TRANSMIT = 2
 
-RUNTIME = 20 #5000
+RUNTIME = 5#5000
 
 VERSION_MAP = {'0':'aimd', '1':'newreno', '2':'lp-aimd', '3':'lp-newreno', '4':'rl-aimd', '5':'rl-newreno'}
 
-COLUMNS = ['num', 'idx', 'cwnd', 'cwnd_order']
+COLUMNS = ['num', 'idx', 'send_time', 'cwnd', 'cwnd_order']
 COLUMNS += ['ewma_inter_send', 'min_inter_send']
 COLUMNS += ['ts_inter_send_' + str(i + 1) for i in range(TS_SIZE)]
 COLUMNS += ['ts_ratio_inter_send_' + str(i + 1) for i in range(TS_SIZE)]

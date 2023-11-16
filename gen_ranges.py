@@ -15,7 +15,7 @@ if version in VERSION_MAP.keys(): version_name = VERSION_MAP[version]
 else:
     print("Invaid version!"); exit(1)
 
-csv_name = 'datasets/' + version_name + '.csv'
+csv_name = 'data/datasets/' + version_name + '.csv'
 df = pd.read_csv(csv_name, index_col=0); df = df.dropna()
 
 rl_status_cols = ['ewma_inter_send', 'ewma_inter_arr', 'ratio_rtt', 'ssthresh', 'cwnd']
@@ -27,6 +27,6 @@ for column in rl_status_cols:
     last = np.percentile(data[column], 99)
     ranges[column] = (first, last)
 
-ranges_name = 'objects/' + version_name + '.pkl'
+ranges_name = 'data/objects/' + version_name + '.pkl'
 if os.path.exists(ranges_name): os.remove(ranges_name)
 pickle.dump(ranges, open(ranges_name, 'wb'))

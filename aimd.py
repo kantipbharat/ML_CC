@@ -32,7 +32,7 @@ throughput, max_throughput, loss_rate, overall_loss_rate = ([0.0] * 4); delay = 
 throughput_timestamps, loss_rate_timestamps = [deque()] * 2; interval = 1
 
 df = pd.DataFrame(columns=COLUMNS)
-csv_name = 'datasets/aimd.csv'
+csv_name = 'data/datasets/aimd.csv'
 if os.path.exists(csv_name): os.remove(csv_name)
 
 def send_packs():
@@ -69,7 +69,7 @@ def send_packs():
                 loss_rate = len(loss_rate_timestamps) / interval; delay = rtt - min_rtt
                 if sent_packets != 0: overall_loss_rate = lost_packets / sent_packets
 
-                row = [curr_packet, idx, cwnd, cwnd_order]
+                row = [curr_packet, idx, send_time, cwnd, cwnd_order]
                 row += [ewma_inter_send, min_inter_send]
                 row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
                 row += [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]
@@ -181,7 +181,7 @@ def retransmit():
                     loss_rate = len(loss_rate_timestamps) / interval; delay = rtt - min_rtt
                     if sent_packets != 0: overall_loss_rate = lost_packets / sent_packets
 
-                    row = [num, idx, cwnd, pending_acks[num]]
+                    row = [num, idx, send_time, cwnd, pending_acks[num]]
                     row += [ewma_inter_send, min_inter_send]
                     row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
                     row += [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]

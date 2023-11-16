@@ -50,10 +50,10 @@ if version in VERSION_MAP.keys(): version_name = VERSION_MAP[version]
 else:
     print("Invaid version!"); exit(1)
 
-csv_name = 'datasets/rl-' + version_name + '.csv'
+csv_name = 'data/datasets/rl-' + version_name + '.csv'
 if os.path.exists(csv_name): os.remove(csv_name)
 
-ranges_name = 'objects/' + version_name + '.pkl'
+ranges_name = 'data/objects/' + version_name + '.pkl'
 ranges = pickle.load(open(ranges_name, 'rb'))
 
 def find_bin(col, val):
@@ -105,7 +105,7 @@ def send_packs():
                 loss_rate = len(loss_rate_timestamps) / interval; delay = rtt - min_rtt
                 if sent_packets != 0: overall_loss_rate = lost_packets / sent_packets
 
-                row = [curr_packet, idx, cwnd, cwnd_order]
+                row = [curr_packet, idx, send_time, cwnd, cwnd_order]
                 row += [ewma_inter_send, min_inter_send]
                 row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
                 row += [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]
@@ -256,7 +256,7 @@ def retransmit():
                     loss_rate = len(loss_rate_timestamps) / interval; delay = rtt - min_rtt
                     if sent_packets != 0: overall_loss_rate = lost_packets / sent_packets
 
-                    row = [num, idx, cwnd, pending_acks[num]]
+                    row = [num, idx, send_time, cwnd, pending_acks[num]]
                     row += [ewma_inter_send, min_inter_send]
                     row += [ts_inter_send[i] - ts_inter_send[0] for i in range(1, TS_SIZE + 1)] 
                     row += [ts_ratio_inter_send[i] - ts_ratio_inter_send[0] for i in range(1, TS_SIZE + 1)]
