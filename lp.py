@@ -22,7 +22,7 @@ running = True; pending_acks = {}; send_lock = threading.Lock()
 curr_packet = 1; last_packet = 0; sent_packets = 0; lost_packets = 0
 
 MSS = 1.0; cwnd = MSS; ssthresh = 64.0; cwnd_order = 1; last_ack = 0
-ewma_smoothing_factor = 0.7; lpthresh = 0.6
+ewma_smoothing_factor = 0.7; lpthresh = 0.3
 
 prev_send, curr_send, inter_send, ratio_inter_send, ewma_inter_send = [np.NaN] * 5
 prev_arr, curr_arr, inter_arr, ratio_inter_arr, ewma_inter_arr = [np.NaN] * 5
@@ -65,7 +65,7 @@ def send_packs():
 
             if not np.any(np.isnan(row[3:])):
                 probs = model.predict_proba(np.array(row[3:]).reshape(1, -1))[0]
-                if probs[len(probs) - 1] < lpthresh: cwnd = max(cwnd - 1, MSS)
+                if probs[0] > lpthresh: cwnd = max(cwnd - 1, MSS)
                 if cwnd_order > cwnd: cwnd_order = 1
 
             cli_socket.send(Packet(curr_packet, idx, DATA, send_time=send_time).to_bytes())
