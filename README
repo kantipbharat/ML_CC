@@ -4,9 +4,12 @@ I've implemented all code included in the library from scratch. The files in thi
 
 1. Navigate to the ML_CC repository
 2. pip install -r requirements.txt
-3. mkdir datasets && mkdir dataframes && mkdir models && mkdir objects
-4. Adjust RUNTIME in helper.py to set the number of seconds to run each simulation
-5. ./test.sh
+3. mkdir data
+4. cd data
+5. mkdir datasets & mkdir dataframes & mkdir models & mkdir objects & mkdir figures
+6. cd ..
+7. Adjust RUNTIME in helper.py to set the number of seconds to run each simulation
+8. ./test.sh
 
 test.sh             script to run all files in order - aimd, newreno, lp, and rl
                     NOTE: to adjust the time each simulation runs for, change RUNTIME in helper.py
